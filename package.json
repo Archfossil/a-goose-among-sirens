@@ -1,0 +1,16 @@
+{
+  "name": "a-goose-among-sirens",
+  "version": "0.1.0",
+  "description": "A Jackbox-style party game where your friends guess who picked which song.",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "license": "UNLICENSED"
+}
