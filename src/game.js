@@ -6,8 +6,10 @@ const PROMPTS = require('./prompts');
 const { parseSong } = require('./media');
 const { GameError } = require('./errors');
 
-const MIN_PLAYERS = 3;
+const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 12;
+// Goose is Loose: how many unanswered prompts each player may trade in per game.
+const SWAPS_PER_GAME = 2;
 const COLORS = [
   '#ff6b6b', '#ffd166', '#06d6a0', '#4cc9f0', '#b388ff', '#ff9f1c',
   '#f72585', '#90be6d', '#e9c46a', '#a0c4ff', '#ffadad', '#caffbf',
@@ -42,6 +44,7 @@ const MODES = {
     key: 'king',
     name: 'King Goose',
     short: 'Soundtrack the King’s life',
+    minPlayers: 2,
     rules: 'Players take turns as King Goose. The King gets a ridiculous scenario and everyone else picks its soundtrack. The songs play anonymously, then the King crowns the best one. The winner gets +1.',
   },
   secret: {
@@ -247,7 +250,10 @@ class Room {
   start() {
     if (this.phase !== 'lobby' && this.phase !== 'gameover') throw new GameError('A game is already running');
     this.promoteAudience();
-    if (this.players.length < MIN_PLAYERS) throw new GameError(`You need at least ${MIN_PLAYERS} players`);
+    const min = this.minPlayers();
+    if (this.players.length < min) {
+      throw new GameError(min > MIN_PLAYERS ? `${MODES[this.mode].name} needs at least ${min} players` : `You need at least ${min} players`);
+    }
     for (const p of this.players) p.score = 0;
     this.nowPlayingId = null;
     this.fx = null;
@@ -260,6 +266,9 @@ class Room {
     else this.startSecret();
     this.touch();
   }
+
+  /** The smallest table the selected mode can be played with. */
+  minPlayers() { return Math.max(MIN_PLAYERS, MODES[this.mode].minPlayers || 0); }
 
   backToLobby() {
     this.phase = 'lobby';
@@ -406,8 +415,38 @@ class Room {
       }
       subs[p.id] = new Array(n).fill(null);
     }
-    this.g = { assignments, subs, queue: [], index: 0, guesses: {}, result: null };
+    const swaps = {};
+    for (const p of this.players) swaps[p.id] = SWAPS_PER_GAME;
+    this.g = { assignments, subs, swaps, deck, queue: [], index: 0, guesses: {}, result: null };
     this.phase = 'submit';
+  }
+
+  /** Trade an unanswered prompt for a fresh one from the deck. */
+  swapPrompt(pid, slot) {
+    this.mustPlayer(pid);
+    if (this.mode !== 'loose' || this.phase !== 'submit') throw new GameError('You can only swap prompts while picking songs');
+    const g = this.g;
+    const i = Number(slot);
+    const mine = g.assignments[pid];
+    if (!Number.isInteger(i) || i < 0 || i >= mine.length) throw new GameError('Unknown prompt');
+    if (g.subs[pid][i]) throw new GameError('You already answered that one. Clear it by picking a new song instead.');
+    if (!g.swaps) g.swaps = {};
+    if (!has(g.swaps, pid)) g.swaps[pid] = SWAPS_PER_GAME;
+    if (g.swaps[pid] <= 0) throw new GameError('No swaps left this game');
+    if (!g.deck) g.deck = [];
+    // Skip anything this player is already holding so a swap always changes the prompt.
+    let next = null;
+    for (let tries = 0; tries < 2 && next == null; tries++) {
+      if (!g.deck.length) g.deck = this.deckFor(PROMPTS.LOOSE, 'loose');
+      const idx = g.deck.findLastIndex((t) => !mine.includes(t));
+      if (idx >= 0) next = g.deck.splice(idx, 1)[0];
+      else g.deck = [];
+    }
+    if (next == null) throw new GameError('No other prompts to swap in');
+    mine[i] = next;
+    g.swaps[pid]--;
+    this.touch();
+    return { prompt: next, swapsLeft: g.swaps[pid] };
   }
 
   beginLooseSong() {
@@ -744,7 +783,7 @@ class Room {
       modeInfo: MODES[this.mode],
       settings: { ...this.settings },
       version: this.version,
-      minPlayers: MIN_PLAYERS,
+      minPlayers: this.minPlayers(),
       maxPlayers: MAX_PLAYERS,
       players: this.players.map(({ id, name, color, hat, score, connected }) => ({ id, name, color, hat, score, connected })),
       hats: HATS,
@@ -805,6 +844,7 @@ class Room {
     const v = { promptsPerPlayer: this.settings.promptsPerPlayer, total: g.queue.length, index: g.index };
     if (this.phase === 'submit' && !isHost) {
       v.prompts = g.assignments[pid].map((text, i) => ({ text, song: songView(g.subs[pid][i]) }));
+      v.swapsLeft = g.swaps && has(g.swaps, pid) ? g.swaps[pid] : SWAPS_PER_GAME;
     }
     if (this.phase === 'listen' || this.phase === 'reveal') {
       const e = g.queue[g.index];
@@ -863,4 +903,4 @@ class Room {
   }
 }
 
-module.exports = { MAX_AUDIENCE, Room, MODES, MIN_PLAYERS, MAX_PLAYERS, TIMERS, REACTIONS, HATS, GameError, shuffle };
+module.exports = { MAX_AUDIENCE, Room, MODES, MIN_PLAYERS, SWAPS_PER_GAME, MAX_PLAYERS, TIMERS, REACTIONS, HATS, GameError, shuffle };

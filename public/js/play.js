@@ -356,7 +356,23 @@ function loose(s) {
     return [
       done ? waiting('All your songs are in!', 'You can still change them until everyone finishes.') : null,
       ...s.prompts.map((p, i) => card(
-        h('div', { class: 'kicker' }, `Prompt ${i + 1} of ${s.prompts.length}`),
+        h('div', { class: 'prompt-head' },
+          h('div', { class: 'kicker' }, `Prompt ${i + 1} of ${s.prompts.length}`),
+          !p.song && s.swapsLeft > 0 ? h('button', {
+            type: 'button', class: 'linkish swap-btn',
+            title: 'Trade this prompt for a different one',
+            onclick: async (e) => {
+              const btn = e.currentTarget;
+              btn.disabled = true;
+              try {
+                const r = await act('swapPrompt', { slot: i });
+                toast(r.swapsLeft ? `New prompt! ${r.swapsLeft} swap${r.swapsLeft === 1 ? '' : 's'} left` : 'New prompt! That was your last swap');
+              } catch (err) {
+                toast(err.message);
+                btn.disabled = false;
+              }
+            },
+          }, `\u{1F504} Swap (${s.swapsLeft} left)`) : null),
         h('p', { class: 'prompt' }, p.text),
         songForm({ key: `loose-${i}-${p.text}`, slot: i, current: p.song }),
       )),

@@ -29,11 +29,11 @@ const yt = (i) => `https://youtu.be/abcdefghi${String(i).padStart(2, '0')}`;
 
 test('lobby rules: names, min players, mode lock', () => {
   const room = new Room('TEST');
+  assert.throws(() => room.start(), /at least 2/);
   room.addPlayer('a', 'Ann');
   assert.throws(() => room.addPlayer('b', 'ann'), /already took/);
   assert.throws(() => room.addPlayer('c', '   '), /name/);
   room.addPlayer('b', 'Bo');
-  assert.throws(() => room.start(), /at least 3/);
   room.addPlayer('c', 'Cy');
   room.start();
   assert.equal(room.phase, 'submit');

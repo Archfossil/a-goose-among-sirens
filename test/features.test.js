@@ -298,3 +298,81 @@ test('rooms survive a save/restore round trip mid-game', () => {
   back.submit('aud', null, yt(4)); // joined while seats were free, so Audrey is a player
   assert.equal(back.phase, 'listen', 'game continues normally');
 });
+
+// ---------- prompt swaps & per-mode minimums ----------
+
+test('Goose is Loose: players can swap unanswered prompts a limited number of times', () => {
+  const { SWAPS_PER_GAME } = require('../src/game');
+  const room = new Room('SWAP');
+  for (let i = 0; i < 3; i++) room.addPlayer(`p${i}`, `P${i}`);
+  room.setSettings({ promptsPerPlayer: 2 });
+  room.start();
+  const before = room.view('p0').prompts.map((p) => p.text);
+  assert.equal(room.view('p0').swapsLeft, SWAPS_PER_GAME);
+  const r = room.swapPrompt('p0', 0);
+  const after = room.view('p0').prompts.map((p) => p.text);
+  assert.notEqual(after[0], before[0]);
+  assert.ok(!before.includes(after[0]), 'swap never hands back a prompt you already hold');
+  assert.equal(after[1], before[1]);
+  assert.equal(r.swapsLeft, SWAPS_PER_GAME - 1);
+  // Answered prompts are locked in.
+  room.submit('p0', 1, 'https://youtu.be/abcdefghi01');
+  assert.throws(() => room.swapPrompt('p0', 1), /already answered/);
+  for (let i = 1; i < SWAPS_PER_GAME; i++) room.swapPrompt('p0', 0);
+  assert.throws(() => room.swapPrompt('p0', 0), /No swaps left/);
+  assert.throws(() => room.swapPrompt('p0', 9), /Unknown prompt/);
+  // The swapped-in prompt is what the song is played under.
+  const final = room.view('p0').prompts[0].text;
+  room.submit('p0', 0, 'https://youtu.be/abcdefghi02');
+  for (const p of ['p1', 'p2']) for (let i = 0; i < 2; i++) room.submit(p, i, `Song ${p}${i}`);
+  assert.equal(room.phase, 'listen');
+  assert.ok(room.g.queue.some((e) => e.playerId === 'p0' && e.prompt === final));
+  assert.throws(() => room.swapPrompt('p0', 0), /only swap prompts while picking/);
+  // Other players never see someone else's swap count.
+  assert.equal(room.view(null).swapsLeft, undefined);
+});
+
+test('swaps survive a save/restore and work on old saves without swap data', () => {
+  const room = new Room('SAVE');
+  room.addPlayer('a', 'Ann');
+  room.addPlayer('b', 'Bo');
+  room.start();
+  room.swapPrompt('a', 0);
+  const back = Room.fromJSON(JSON.parse(JSON.stringify(room.toJSON())));
+  assert.equal(back.view('a').swapsLeft, room.view('a').swapsLeft);
+  delete back.g.swaps; delete back.g.deck;
+  back.swapPrompt('a', 1);
+  assert.equal(back.view('a').swapsLeft, require('../src/game').SWAPS_PER_GAME - 1);
+});
+
+test('two-player games: minimum is enforced and every mode finishes', () => {
+  const { MIN_PLAYERS } = require('../src/game');
+  for (const mode of ['loose', 'king', 'secret']) {
+    const room = new Room('DUO');
+    room.setMode(mode);
+    room.addPlayer('a', 'Ann');
+    assert.equal(room.view(null).minPlayers, Math.max(MIN_PLAYERS, mode === 'king' ? 2 : 0));
+    assert.throws(() => room.start(), /at least 2/);
+    room.addPlayer('b', 'Bo');
+    room.start();
+    for (let steps = 0; room.phase !== 'gameover'; steps++) {
+      assert.ok(steps < 200, `${mode} got stuck in ${room.phase}`);
+      if (room.phase === 'submit') {
+        for (const p of room.players) {
+          if (mode === 'loose') room.g.subs[p.id].forEach((_, i) => { if (room.phase === 'submit') room.submit(p.id, i, `Song ${i}`); });
+          else if (!(mode === 'king' && p.id === room.g.cur.kingId) && room.phase === 'submit') room.submit(p.id, null, 'Song');
+        }
+      } else room.next();
+    }
+  }
+});
+
+test('every bonus pack has prompts for all three modes', () => {
+  const { PACKS } = require('../src/prompts');
+  assert.ok(Object.keys(PACKS).length >= 5);
+  for (const [key, pack] of Object.entries(PACKS)) {
+    for (const mode of ['loose', 'king', 'secret']) assert.ok(pack[mode].length >= 4, `${key}.${mode}`);
+    const room = new Room('PACK');
+    assert.ok(room.addPack(key) > 0);
+  }
+});

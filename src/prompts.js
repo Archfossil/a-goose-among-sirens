@@ -144,6 +144,60 @@ const PACKS = {
     ],
     secret: ['Cozy', 'Festive', 'Food Coma', 'Family Drama', 'Gratitude'],
   },
+  birthday: {
+    name: 'Birthday',
+    loose: [
+      'What song should play the moment you blow out the candles?',
+      'What song plays as you open a gift card for exactly $5?',
+      'What song best describes realizing you’re a whole year older?',
+      'What song should play when the waiter brings out the surprise dessert?',
+      'What song would you request for your 100th birthday party?',
+      'What song plays as you read the birthday texts from people you forgot existed?',
+    ],
+    king: [
+      'King Goose throws a surprise party, but the guest of honor never shows up.',
+      'King Goose accidentally hires a clown who only does sad magic tricks.',
+      'King Goose wakes up on their birthday to find everyone forgot.',
+      'King Goose sneezes on the birthday cake right before the candles are lit.',
+    ],
+    secret: ['Celebration', 'Nostalgia', 'Sugar Rush', 'Aging', 'Surprise'],
+  },
+  office: {
+    name: 'Office Party',
+    loose: [
+      'What song should play when you hit “Reply All” by accident?',
+      'What song is your 3 PM “the meeting could have been an email” anthem?',
+      'What song plays as you walk out of the building on Friday at 5?',
+      'What song should play when the boss walks by and you switch tabs?',
+      'What song would you play to hype the team before a big presentation?',
+      'What song describes your inbox on Monday morning?',
+    ],
+    king: [
+      'King Goose is promoted to manager of the department that just fired them.',
+      'King Goose forgets to mute themselves on a call with the CEO.',
+      'King Goose microwaves fish in the office kitchen and is now public enemy #1.',
+      'King Goose wins Employee of the Month for the 14th month in a row.',
+    ],
+    secret: ['Burnout', 'Ambition', 'Casual Friday', 'Deadline', 'Teamwork'],
+  },
+  cookout: {
+    name: 'Summer Cookout',
+    loose: [
+      'What song should play when the burgers finally hit the grill?',
+      'What song gets the whole backyard dancing after sunset?',
+      'What song plays while you defend your spot in the shade?',
+      'What song should play when someone cannonballs into the pool?',
+      'What song plays as the first firework goes up?',
+      'What song should play while you sneak a third plate of potato salad?',
+    ],
+    king: [
+      'King Goose is put in charge of the grill and nobody knows if that’s a good idea.',
+      'King Goose gets a sunburn in the exact shape of their sunglasses.',
+      'King Goose is chased across the yard by a very determined wasp.',
+      'King Goose wins the water balloon fight but loses their dignity.',
+    ],
+    secret: ['Sunshine', 'Lazy', 'Bonfire', 'Heatwave', 'Freedom'],
+  },
 };
 
 module.exports = { LOOSE, KING, SECRET, ADULT, PACKS };

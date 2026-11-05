@@ -59,6 +59,9 @@ a { color: var(--accent); }
 .chip.ghost { --c: #777; }
 
 .kicker { text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.8em; font-weight: 600; color: var(--muted); }
+.prompt-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.swap-btn { font-size: 0.85em; white-space: nowrap; text-decoration: none; padding: 6px 0; }
+.swap-btn:disabled { opacity: 0.5; cursor: default; }
 
 #toast {
   position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 30px);

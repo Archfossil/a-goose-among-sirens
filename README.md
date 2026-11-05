@@ -38,10 +38,10 @@ Options:
 
 ## Game modes
 
-All three modes need **3–12 players**. The host screen is not a player.
+All three modes accept **2–12 players** (3+ is the real party experience; fewer is handy for testing or demos). King Goose needs at least 2. The host screen is not a player.
 
 ### 🪿 A Goose is Loose!
-Each player gets **3 random prompts** (1–3, adjustable in the lobby), such as *"What song should be playing when you inevitably take over the world?"*, and answers each with a song.
+Each player gets **3 random prompts** (1–3, adjustable in the lobby) and can **swap up to 2** they don't like for new ones before answering, such as *"What song should be playing when you inevitably take over the world?"*, and answers each with a song.
 
 When everyone is done, all the songs are shuffled and played one at a time. The host screen shows the prompt that the song's owner (the "Goose") was answering. Everyone else guesses on their phone who picked it.
 
@@ -73,7 +73,7 @@ The Goose rotates each round. The default is 3 rounds, adjustable up to 12.
 - **Song of the Night.** When the game ends, everyone hearts their favorite song on their phone. Their own songs don't count, and tapping again removes the heart. The TV shows the live winner along with who picked it.
 - **Late joiners join the audience.** Anyone who arrives mid-game, or after all 12 seats are taken, joins as audience. Audience members see what the TV shows, can send reactions and heart songs at the end, and get seated automatically when the next game starts. Their secret prompts never leak, because audience members only receive public info.
 - **Family mode** (lobby toggle) leaves out the crude and dark built-in prompts, such as the nipples, condom, cyanide and swamp-ass scenarios. Custom prompts are never filtered.
-- **Prompt packs.** Add a built-in bonus pack (*Road Trip*, *Holiday Party*) with one click. You can also **Export** your custom prompts as a JSON file and **Import** it at the next party.
+- **Prompt packs.** Add a built-in bonus pack (*Road Trip*, *Holiday Party*, *Birthday*, *Office Party*, *Summer Cookout*) with one click. You can also **Export** your custom prompts as a JSON file and **Import** it at the next party.
 - **Link preview.** When a player pastes a link, the phone looks up the actual track title ("🎵 Rick Astley – Never Gonna Give You Up") or flags a broken link, before they lock it in.
 
 - **Goose avatars.** Every player gets a goose with a collar in their color and a hat: crown, top hat, party hat, beanie, flower, headphones, shades, bow tie or cowboy hat. Players change hats from their phone in the lobby. New geese waddle onto the host's lobby screen as they join.
@@ -179,7 +179,6 @@ npm test
 
 ## Ideas / next steps
 - Show reactions as tiny goose avatars flying across the WebGL scene, instead of emoji only.
-- Let players **pick their prompts** (for example, choose 3 of 5).
-- More built-in **prompt packs** (Birthday, Office Party, Summer Cookout…).
+- Let players **pick their prompts** (for example, choose 3 of 5), building on prompt swaps.
 - **Spotify Web Playback SDK** support for full-track playback when the host has Premium.
 - A **"best pick" vote** at the end, with a bonus for the song everyone loved most.

@@ -277,6 +277,7 @@ const PLAYER_ACTIONS = {
     enrichSong(song).then((changed) => { if (changed) room.touch(); });
     return { display: song.display };
   },
+  swapPrompt: (room, b, s, pid) => room.swapPrompt(pid, b.slot),
   guess: (room, b, s, pid) => room.guess(pid, b.target),
   judge: (room, b, s, pid) => room.judge(pid, b.entryId),
   vote: (room, b, s, pid) => room.vote(pid, b.target),
