@@ -1,0 +1,149 @@
+'use strict';
+// All prompt text comes from "A Goose Among Sirens.docx" (the design doc).
+
+// "A Goose is Loose!" — each player gets several of these.
+const LOOSE = [
+  "What's a song you're just vibing with lately?",
+  'What song would you want played while your casket is lowered at your funeral?',
+  'What song should be playing while you walk in slow motion away from a massive explosion you just caused?',
+  'What song should be your permanent personal theme music every time you enter a room?',
+  'What song makes you drive faster when it comes on in the car?',
+  'What song would amp you up before a high-stakes social engagement?',
+  'What song should be playing when you inevitably take over the world?',
+  'When a minor inconvenience sends you into a dramatic spiral rivaling a Greek tragedy, what song should be playing to capture the energy?',
+  'What is your "I am the main character" song?',
+  'What song makes you feel invincible?',
+  'What song would be playing when you rip off your fake mustache and reveal your true identity all along?',
+  'What is the victory song playing after you finally get your revenge?',
+  'What song do you genuinely think you could absolutely nail at karaoke?',
+  'What song do you think every other player probably knows the lyrics to?',
+  'What song would you only dare to sing if nobody was around to hear it? (Even though you could totally nail it.)',
+  'What song are you not a huge fan of, despite knowing all or most of the lyrics?',
+  'What song do you wish you had the vocal range to pull off singing?',
+  'What song would you use to confuse an invading alien species desperate to understand human culture?',
+  'What song plays in place of conscious thought while your body goes through the motions?',
+  'A time-traveling knight challenges you to a joust in the grocery store parking lot. What song is your battle anthem as you mount your steed and charge?',
+  'What song would you have playing while you perform critical life-saving open heart surgery?',
+  "What song would you use to punish people who don't put shopping carts in the corral? (The lazy bums)",
+  'What song is playing while you bravely rush into a burning building to save a beloved houseplant from the inferno?',
+  'What song describes your current level of caffeine addiction?',
+  "What's a good rainy day, zero responsibilities, type of song for you?",
+  'What is your most "2004 emo phase" song in your playlist right now?',
+  'What is your most "1995 grunge phase" song in your playlist right now?',
+  'What is your most "1985 hair metal phase" song in your playlist right now?',
+  'What song says about you "I made this playlist in high school and my personality hasn\'t changed since."',
+  'What song feels like driving down an empty highway at 3 AM with the windows down in perfect fresh air?',
+  'What song represents the absolute peak nostalgic childhood memory for you?',
+  'What song is playing during your training montage to beat those pesky rivals of yours in some obscure olympic sport?',
+  'What is the song playing during your dramatic getaway after a bank heist?',
+  'What song feels like sadly looking out the window of a cross-country bus at the beginning of a long road trip after giving a painful "goodbye"?',
+  'What song feels like drinking warm coffee in a gentle snowstorm?',
+  'What song is the auditory equivalent of a messy bedroom?',
+  'What song could make you cry?',
+  'What song do you play to absolutely ruin a romantic candlelit dinner?',
+  'What song represents your intrusive thoughts?',
+  'What song would be your alarm sound if you needed to wake up every morning in a desperate panic?',
+  'What song do you secretly judge people for not knowing the lyrics to?',
+  'What song represents your worst habits?',
+  'What song plays as you make your desperate heroic final stand against the overwhelming forces of evil?',
+  'What song do you use to introduce just a little bit of your crazy to new people?',
+  "What song do you think none of the other players has heard before, but they should?",
+  'What song speaks so perfectly to your soul that you feel you could have written it yourself?',
+  'What song do they play to get you to just take the award, get off the stage, please stop talking and sit down?',
+  'What song feels like Friday?',
+  'What song feels like Monday?',
+  'What is the first song you play from experimental speakers to reverberate through the deepest levels of the earth so that the secret cabal of underground mole people can jam out to it too?',
+];
+
+// "King Goose" — scenarios the rest of the flock soundtracks.
+const KING = [
+  'King Goose is giving a heartfelt speech to the neighborhood children about the dangers of a Sasquatch on a full moon.',
+  'King Goose learns the untold history of half a century of colonial atrocities.',
+  'King Goose receives 50,000 volts straight to the nipples.',
+  'King Goose enjoys a balanced breakfast.',
+  'King Goose discovers a rare species of parakeet with human teeth and feet.',
+  "King Goose learns it's all in their head after all…",
+  'King Goose learns the real treasure was the friends they made along the way.',
+  'King Goose learns the real treasure is actually treasure and is still desperate for money at the end of the adventure with their broke friends.',
+  'King Goose becomes the hog cranking champion at the state fair, winning a sick bucket of fish heads.',
+  'King Goose accepts a position as a drug sniffing dog at the airport and is underqualified.',
+  "King Goose discovers they're the product of a defective condom.",
+  'King Goose unleashes an earth shattering fart which awakens the ancient beings from their eternal slumber.',
+  'King Goose goes bald.',
+  "King Goose wins the world record for most almonds eaten in under an hour and then promptly dies from the little trace bits of cyanide which are inside each almond (it's true, look it up.)",
+  "King Goose goes around the party sniffing everyone's hair loudly but they're the host's sibling and they live here so it's not like people can just ask them to leave, and they're otherwise pretty chill and harmless.",
+  'King Goose is haunted by the spirits of Christmas past, present, and future.',
+  'King Goose is just a hot mess to be honest.',
+  'King Goose was filmed before a live studio audience.',
+  'King Goose used to be a loser like you, until they learned about this song.',
+  'King Goose is first contact with the alien overlords.',
+  'King Goose performs a mating display on the subway.',
+  'King Goose teaches yoga as a side hustle while working as a hibachi chef in a strip mall.',
+  'King Goose is a street mime, but having a very serious stroke and nobody can tell.',
+  'A moment of silence for King Goose. And now, a song in memoriam.',
+  'King Goose is gonna get to the bottom of whatever the McRib is actually made of.',
+  'King Goose has developed a cure for swamp ass, but fearing retaliation from the government, refuses to release it.',
+];
+
+// "Secret Goose" — one-word feelings. The doc gives "Happy, Love, Fear, Nostalgia, etc."
+const SECRET = [
+  'Happy', 'Love', 'Fear', 'Nostalgia', 'Rage', 'Jealousy', 'Triumph', 'Heartbreak',
+  'Euphoria', 'Dread', 'Longing', 'Confidence', 'Awkward', 'Serenity', 'Chaos', 'Hope',
+  'Spite', 'Wonder', 'Guilt', 'Regret', 'Boredom', 'Pride', 'Anxiety', 'Bliss',
+  'Mischief', 'Melancholy', 'Defiance', 'Gratitude', 'Loneliness', 'Adrenaline', 'Smug',
+  'Cozy', 'Paranoia', 'Giddy', 'Betrayal', 'Freedom', 'Embarrassment', 'Lust for Power',
+];
+
+// Family mode leaves these out (crude, gory or heavy). Everything else stays in.
+const ADULT = new Set([
+  'King Goose learns the untold history of half a century of colonial atrocities.',
+  'King Goose receives 50,000 volts straight to the nipples.',
+  "King Goose discovers they're the product of a defective condom.",
+  "King Goose wins the world record for most almonds eaten in under an hour and then promptly dies from the little trace bits of cyanide which are inside each almond (it's true, look it up.)",
+  'King Goose performs a mating display on the subway.',
+  'King Goose is a street mime, but having a very serious stroke and nobody can tell.',
+  'King Goose has developed a cure for swamp ass, but fearing retaliation from the government, refuses to release it.',
+  'Lust for Power',
+]);
+
+// Bonus packs the host can add from the lobby (they become custom prompts, dealt first).
+const PACKS = {
+  roadtrip: {
+    name: 'Road Trip',
+    loose: [
+      'What song do you blast the second you hit the open highway?',
+      'What song gets everyone in the car singing, even the one pretending to sleep?',
+      'What song is playing when you realize you missed the exit 40 minutes ago?',
+      'What song belongs on a gas-station-snacks-at-2-AM playlist?',
+      'What song should play as you cross the state line?',
+      'What song would get you kicked off aux duty immediately?',
+    ],
+    king: [
+      'King Goose gets a flat tire in the middle of a desert with no cell service.',
+      'King Goose insists on taking the "scenic route" for the ninth hour.',
+      'King Goose finally finds a clean rest stop bathroom.',
+      'King Goose picks up a hitchhiking mariachi band.',
+    ],
+    secret: ['Wanderlust', 'Carsick', 'Freedom', 'Homesick', 'Lost'],
+  },
+  holiday: {
+    name: 'Holiday Party',
+    loose: [
+      'What song should play while you make a dramatic entrance at the family dinner?',
+      'What song plays as you fight a relative for the last slice of pie?',
+      'What non-holiday song feels like the holidays to you?',
+      'What song would you play to end a heated political argument at the table?',
+      'What song plays while you wrap presents at 3 AM on the night before?',
+      'What song should play when you open a gift you absolutely hate?',
+    ],
+    king: [
+      'King Goose sets the kitchen on fire trying to deep-fry a turkey.',
+      'King Goose wins the white elephant gift exchange with a single sock.',
+      'King Goose is stuck at the kids’ table for the 20th year in a row.',
+      'King Goose gets mistaken for a mall Santa.',
+    ],
+    secret: ['Cozy', 'Festive', 'Food Coma', 'Family Drama', 'Gratitude'],
+  },
+};
+
+module.exports = { LOOSE, KING, SECRET, ADULT, PACKS };
