@@ -121,6 +121,16 @@ The Goose rotates each round. The default is 3 rounds, adjustable up to 12.
 
 ## Playing on phones (and hosting from one)
 
+- **📺 Same room or 💻 everyone remote** (lobby setting *Playing*):
+  - **Same room (default):** the music plays only on the host screen, so phones stay silent and nothing echoes.
+  - **Everyone remote:** for when everyone is on their own phone or computer, such as on a video call or with the host on Render. Each player's device plays every song too, **synced to the host**: it jumps to where the host is in the song, including when someone joins or reloads mid-song.
+  - Each device has its own **Mute** button, and the phone's own volume buttons work as usual.
+  - If a browser won't start the sound by itself (some phones block autoplay), the phone shows **▶ Tap to play** or **🔊 Tap for sound**. After that one tap, later songs play automatically.
+  - Spotify songs show Spotify's own player to tap, because Spotify doesn't let a page start playback.
+
+- **Music volume:** the slider under *Now playing* (or the **-** and **+** keys) sets the music volume, and the 🔊 button next to it mutes. YouTube songs follow it, and the level carries over between songs and reloads. Spotify's player doesn't let other pages control its volume, so use its own controls for Spotify songs. If a browser blocks autoplay, the panel says to press ▶.
+- **Sharing the room:** **🔗 Copy link** in the host's top bar, or *Copy invite link* on the lobby card, copies a link that drops people straight into the room. On phones and tablets it opens the share sheet instead. Players can also share it from their phone's lobby (*Invite friends*). The 🔔 button turns sound effects on and off.
+
 - **Any modern phone browser works:** iOS Safari 15+, Chrome and Firefox on Android. Layouts were tested at 320 px (iPhone SE), 390 px, landscape and tablet sizes.
 - **Installable:** players can use *Add to Home Screen* to get a full-screen app with its own icon.
 - **Connections that survive phone life:** if a phone sleeps, switches apps or drops Wi-Fi, it reconnects automatically when it comes back. A server heartbeat catches connections that died silently. While a phone is disconnected, a "Reconnecting…" banner shows.
@@ -158,6 +168,7 @@ src/game.js          The game: one state machine per room covering all three mod
 src/media.js         Parses YouTube/Spotify links and plain text; looks up titles via oEmbed
 src/prompts.js       Every prompt and scenario from the design doc
 public/host.html     Big screen: js/host.js (UI + music), js/scene.js (WebGL), js/sfx.js (Web Audio)
+public/js/listen.js  Everyone-remote mode: plays each song on the player's own device, synced to the host
 public/play.html     Phone controller: js/play.js
 public/css/style.css Shared styles
 test/game.test.js    Engine tests: full games of every mode, secrecy checks, link parsing

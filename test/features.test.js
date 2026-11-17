@@ -376,3 +376,36 @@ test('every bonus pack has prompts for all three modes', () => {
     assert.ok(room.addPack(key) > 0);
   }
 });
+
+test('everyone gets the playing song (never its owner) with a start time for syncing', () => {
+  const { room, clock } = room3('king');
+  room.start();
+  const king = room.g.cur.kingId;
+  room.players.filter((p) => p.id !== king).forEach((p, i) => room.submit(p.id, null, yt(i)));
+  const first = room.view('p0').nowPlaying;
+  assert.ok(first && first.song.kind === 'youtube');
+  assert.equal(first.startedAt, clock.now());
+  assert.equal(JSON.stringify(first).includes('playerId'), false, 'no owner in nowPlaying');
+  assert.equal(room.view(king).nowPlaying.entryId, first.entryId, 'the King hears it too');
+  clock.advance(5000);
+  room.react('p0', 'fire'); // unrelated updates don't move the start time
+  assert.equal(room.view('p0').nowPlaying.startedAt, first.startedAt);
+  room.next();
+  assert.equal(room.view('p0').nowPlaying.startedAt, clock.now(), 'next song, new start time');
+  clock.advance(3000);
+  room.play(first.entryId);
+  assert.equal(room.view('p0').nowPlaying.startedAt, clock.now(), 'a replay restarts the clock');
+  assert.equal(typeof room.view('p0').now, 'number');
+});
+
+test('venue setting: same room by default, remote on request, validated', () => {
+  const { room } = room3('loose');
+  assert.equal(room.view('p0').settings.venue, 'room');
+  room.setSettings({ venue: 'remote' });
+  assert.equal(room.view('p0').settings.venue, 'remote', 'phones learn they should play the music');
+  room.setSettings({ venue: 'moon' });
+  assert.equal(room.settings.venue, 'room');
+  room.setSettings({ venue: 'remote' });
+  const back = Room.fromJSON(JSON.parse(JSON.stringify(room)), { clock: fakeClock() });
+  assert.equal(back.settings.venue, 'remote', 'survives a restart');
+});

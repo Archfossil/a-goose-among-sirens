@@ -3,7 +3,7 @@
 
 import {
   h, api, openStream, toast, store, playerById, chip, searchUrls, gooseIcon, modeIcon,
-  mountInto, clearKept, syncClock, timerBadge, secondsLeft, copyText, songHref, setlistText, youtubePlaylistUrl, gooseAvatar,
+  mountInto, clearKept, syncClock, shareLink, shareToast, timerBadge, secondsLeft, copyText, songHref, setlistText, youtubePlaylistUrl, gooseAvatar,
 } from './common.js';
 import { Scene } from './scene.js';
 import { sfx } from './sfx.js';
@@ -35,6 +35,8 @@ async function boot() {
     if (e.target.closest('input, textarea, button, select')) return;
     if (e.key === 'Enter' || e.key === 'n' || e.key === 'N') { const b = document.querySelector('[data-primary]'); if (b && !b.disabled) b.click(); }
     if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+    if (e.key === '-' || e.key === '_') setVolume(musicVolume - 10);
+    if (e.key === '=' || e.key === '+') setVolume(musicVolume + 10);
   });
 }
 
@@ -174,6 +176,13 @@ function renderSide(s) {
   prevScores = Object.fromEntries(s.players.map((p) => [p.id, p.score]));
 }
 
+function inviteUrl() { return `${joinUrl()}/?code=${state.code}`; }
+
+async function shareJoin() {
+  const url = inviteUrl();
+  shareToast(await shareLink(url), url);
+}
+
 function renderTop() {
   if (!state) return;
   const url = joinUrl().replace(/^https?:\/\//, '');
@@ -184,6 +193,7 @@ function renderTop() {
       online ? null : h('span', { class: 'offline' }, 'Reconnecting…'),
       h('span', null, 'Join at ', h('strong', null, url)),
       h('span', { class: 'code-pill' }, state.code),
+      h('button', { class: 'btn small ghost copy-link', onclick: shareJoin, title: 'Copy the join link to share' }, '\u{1F517} Copy link'),
     ),
   ].filter(Boolean));
 }
@@ -216,10 +226,11 @@ function progress(s, ids) {
 function lobbyView(s) {
   const url = joinUrl().replace(/^https?:\/\//, '');
   const join = panel('join-card',
-    h('div', { class: 'join-step' }, 'Grab your phone and go to'),
+    h('div', { class: 'join-step' }, s.settings.venue === 'remote' ? 'Send everyone the invite link, or have them go to' : 'Grab your phone and go to'),
     h('div', { class: 'join-url' }, url),
     h('div', { class: 'join-step' }, 'then enter the room code'),
     h('div', { class: 'room-code' }, s.code),
+    h('button', { class: 'btn ghost invite-btn', onclick: shareJoin }, '\u{1F517} Copy invite link'),
     qrCode(`${joinUrl()}/?code=${s.code}`),
     s.players.length ? h('div', { class: 'flock' }, s.players.map((p, i) => h('div', { class: 'flock-goose', style: { '--i': String(i) } },
       gooseAvatar(p), h('span', null, p.name)))) : null,
@@ -261,6 +272,13 @@ function settingsRow(s) {
       title: v ? 'Countdowns for picking songs, guessing, judging and voting' : 'No countdowns: the host moves things along',
       onclick: () => act('setSettings', { settings: { timers: v } }),
     }, v ? 'On' : 'Off'))),
+    h('span', { class: 'settings-label' }, 'Playing'),
+    h('div', { class: 'segmented', role: 'group', 'aria-label': 'Where is everyone playing?' }, [['room', '\u{1F4FA} Same room'], ['remote', '\u{1F4BB} Everyone remote']].map(([v, label]) => h('button', {
+      class: s.settings.venue === v ? 'on' : '',
+      'aria-pressed': s.settings.venue === v ? 'true' : 'false',
+      title: v === 'room' ? 'Everyone is around this screen: music plays here only' : 'Everyone is on their own phone or computer: music plays on each device, in sync',
+      onclick: () => act('setSettings', { settings: { venue: v } }),
+    }, label))),
     h('span', { class: 'settings-label' }, 'Family mode'),
     h('div', { class: 'segmented', role: 'group', 'aria-label': 'Family mode' }, [false, true].map((v) => h('button', {
       class: s.settings.family === v ? 'on' : '',
@@ -617,7 +635,7 @@ function controls(s) {
     h('button', {
       class: 'btn ghost icon', title: sfx.enabled ? 'Mute sound effects' : 'Turn sound effects on', 'aria-pressed': sfx.enabled ? 'true' : 'false',
       onclick: () => { sfx.setEnabled(!sfx.enabled); render(); },
-    }, sfx.enabled ? '\u{1F50A}' : '\u{1F507}'),
+    }, sfx.enabled ? '\u{1F514}' : '\u{1F515}'),
     document.fullscreenEnabled ? h('button', { class: 'btn ghost', onclick: toggleFullscreen, title: 'Fullscreen (F)' }, 'Fullscreen') : null);
   if (s.phase === 'lobby') {
     const enough = s.players.length >= s.minPlayers;
@@ -648,7 +666,7 @@ function controls(s) {
 
 function renderMusic(np) {
   const box = $('music');
-  const key = np ? `${np.entryId}:${np.song.kind}:${np.song.id || np.song.text}` : null;
+  const key = np ? `${np.entryId}:${np.startedAt}:${np.song.kind}:${np.song.id || np.song.text}` : null;
   if (key === musicKey) {
     // Same song: only refresh the caption (titles arrive a moment after submission).
     const cap = box.querySelector('.np-title');
@@ -662,8 +680,10 @@ function renderMusic(np) {
   let player;
   let links;
   if (song.kind === 'youtube') {
-    const src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(song.id)}?autoplay=1&rel=0&start=${Number(song.start) || 0}`;
+    const src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(song.id)}?autoplay=1&rel=0&start=${Number(song.start) || 0}`
+      + `&enablejsapi=1&origin=${encodeURIComponent(location.origin)}`;
     player = h('iframe', { class: 'yt', src, title: 'YouTube player', allow: 'autoplay; encrypted-media; picture-in-picture', allowfullscreen: true });
+    player.addEventListener('load', () => connectYouTube(player));
     links = [h('a', { href: song.url, target: '_blank', rel: 'noopener' }, 'Won’t play? Open on YouTube ↗')];
   } else if (song.kind === 'spotify') {
     const src = `https://open.spotify.com/embed/${encodeURIComponent(song.type)}/${encodeURIComponent(song.id)}?utm_source=generator`;
@@ -681,8 +701,107 @@ function renderMusic(np) {
     h('div', { class: 'np-head' }, h('span', { class: 'np-badge' }, `Now playing · #${np.number}`)),
     h('div', { class: 'np-title' }, song.display),
     player,
+    song.kind === 'text' ? null : volumeControl(song.kind),
+    h('div', { class: 'np-hint', hidden: true }),
     h('div', { class: 'np-links' }, links),
+    state.settings.venue === 'remote'
+      ? h('div', { class: 'np-remote' }, '\u{1F4BB} Everyone remote: each player hears this on their own device. Mute this screen if you\u2019re also playing on this computer.')
+      : null,
   );
 }
+
+// ---------- music volume ----------
+// YouTube embeds accept commands over postMessage when loaded with enablejsapi=1.
+// Spotify's embed has no volume API, so Spotify songs use their own player's controls.
+
+const VOL_KEY = 'goose.volume';
+const YT_ORIGIN = 'https://www.youtube-nocookie.com';
+let musicVolume = clampVol(store.get(VOL_KEY) ?? 80);
+let volumeBeforeMute = musicVolume || 80;
+let ytState = { state: null, since: 0 };
+
+function clampVol(v) { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 80; }
+
+function volumeControl(kind) {
+  const icon = musicVolume === 0 ? '\u{1F507}' : musicVolume < 40 ? '\u{1F509}' : '\u{1F50A}';
+  return h('div', { class: `np-volume${kind === 'spotify' ? ' disabled' : ''}` },
+    h('button', {
+      class: 'vol-btn', type: 'button', onclick: toggleMute, disabled: kind === 'spotify',
+      'aria-label': musicVolume === 0 ? 'Unmute music' : 'Mute music', title: 'Mute / unmute (music only)',
+    }, icon),
+    h('input', {
+      type: 'range', min: 0, max: 100, step: 1, value: musicVolume, class: 'vol-range',
+      'aria-label': 'Music volume', disabled: kind === 'spotify',
+      style: { '--fill': `${musicVolume}%` },
+      oninput: (e) => setVolume(e.currentTarget.value),
+    }),
+    h('span', { class: 'vol-val' }, kind === 'spotify' ? 'Use Spotify\u2019s own volume' : `${musicVolume}%`));
+}
+
+function setVolume(v) {
+  musicVolume = clampVol(v);
+  if (musicVolume > 0) volumeBeforeMute = musicVolume;
+  store.set(VOL_KEY, musicVolume);
+  const box = $('music');
+  const range = box.querySelector('.vol-range');
+  if (range && !range.disabled) {
+    range.value = String(musicVolume);
+    range.style.setProperty('--fill', `${musicVolume}%`);
+    box.querySelector('.vol-val').textContent = `${musicVolume}%`;
+    box.querySelector('.vol-btn').textContent = musicVolume === 0 ? '\u{1F507}' : musicVolume < 40 ? '\u{1F509}' : '\u{1F50A}';
+  }
+  applyVolume();
+}
+
+function toggleMute() { setVolume(musicVolume === 0 ? volumeBeforeMute : 0); }
+
+function ytCommand(iframe, func, args = []) {
+  iframe.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), YT_ORIGIN);
+}
+
+function applyVolume() {
+  const iframe = $('music').querySelector('iframe.yt');
+  if (!iframe) return;
+  ytCommand(iframe, 'setVolume', [musicVolume]);
+  ytCommand(iframe, musicVolume === 0 ? 'mute' : 'unMute');
+}
+
+/** Handshake with the YouTube player so it reports its state, then apply our volume. */
+function connectYouTube(iframe) {
+  ytState = { state: null, since: Date.now() };
+  const hello = () => iframe.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 'goose', channel: 'widget' }), YT_ORIGIN);
+  // The player inside the iframe boots a moment after "load"; repeat until it's surely listening.
+  for (const ms of [0, 400, 1200, 2500, 5000]) setTimeout(() => { if (iframe.isConnected) { hello(); applyVolume(); } }, ms);
+  // If it still isn't playing after a few seconds, autoplay was probably blocked: say so.
+  setTimeout(() => {
+    if (!iframe.isConnected || ytState.state === 1 || ytState.state === 3) return;
+    showHint(ytState.error ? 'This video can\u2019t play here. Use \u201COpen on YouTube\u201D below.' : 'Not playing? Press \u25B6 on the video. Your browser blocked autoplay.');
+  }, 4500);
+}
+
+function showHint(text) {
+  const hint = $('music').querySelector('.np-hint');
+  if (!hint) return;
+  hint.textContent = text;
+  hint.hidden = false;
+}
+
+window.addEventListener('message', (e) => {
+  if (e.origin !== YT_ORIGIN || typeof e.data !== 'string') return;
+  let msg;
+  try { msg = JSON.parse(e.data); } catch { return; }
+  if (msg.event === 'onError') { ytState.error = msg.info; showHint('This video can\u2019t play here. Use \u201COpen on YouTube\u201D below.'); }
+  const info = msg.info;
+  if (!info || typeof info !== 'object') return;
+  if (info.muted === true && musicVolume > 0 && info.playerState === 1 && Date.now() - ytState.since > 3000) {
+    showHint('The video started muted. Click \u{1F50A} on the video (or the slider) for sound.');
+  }
+  if (typeof info.playerState === 'number') {
+    ytState.state = info.playerState;
+    if (info.playerState === 1) { const hint = $('music').querySelector('.np-hint'); if (hint) hint.hidden = true; }
+  }
+  // Someone used the player's own volume control: keep our slider in sync.
+  if (typeof info.volume === 'number' && Math.abs(info.volume - musicVolume) > 1 && !info.muted && Date.now() - ytState.since > 6000) setVolume(info.volume);
+});
 
 boot().catch((err) => { console.error(err); toast('Could not reach the game server'); });

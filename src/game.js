@@ -23,7 +23,7 @@ const MAX_CUSTOM = 60;
 const MAX_AUDIENCE = 50;
 const AUDIENCE_COLOR = '#d7c9e6';
 // Fields that make up a room's saved state (everything except runtime plumbing).
-const SAVED_FIELDS = ['code', 'players', 'audience', 'mode', 'settings', 'phase', 'g', 'nowPlayingId', 'fx', 'fxCount',
+const SAVED_FIELDS = ['code', 'players', 'audience', 'mode', 'settings', 'phase', 'g', 'nowPlayingId', 'nowPlayingAt', 'fx', 'fxCount',
   'entryCount', 'version', 'gameNo', 'history', 'custom', 'customCount', 'stats', 'favorites'];
 const HATS = ['none', 'crown', 'tophat', 'party', 'beanie', 'flower', 'headphones', 'shades', 'bowtie', 'cowboy'];
 
@@ -97,10 +97,12 @@ class Room {
     this.clock = clock;
     this.players = [];
     this.mode = 'loose';
-    this.settings = { promptsPerPlayer: 3, kingCycles: 1, secretRounds: 3, timers: false, family: false };
+    this.settings = { promptsPerPlayer: 3, kingCycles: 1, secretRounds: 3, timers: false, family: false, venue: 'room' };
     this.phase = 'lobby';
     this.g = null;            // per-game state
     this.nowPlayingId = null; // entry the host screen should be playing
+    this.nowPlayingAt = null; // when it started (server clock), so phones can join in sync
+    this.npSeen = null;
     this.fx = null;           // last celebratory event, for host visuals
     this.fxCount = 0;
     this.entryCount = 0;
@@ -120,7 +122,16 @@ class Room {
   }
 
   // ---------- helpers ----------
-  touch() { this.version++; this.syncTimer(); this.onChange(); }
+  touch() {
+    this.version++;
+    // Stamp the moment a new song starts; phones listening along seek to match the TV.
+    if (this.nowPlayingId !== this.npSeen) {
+      this.npSeen = this.nowPlayingId;
+      this.nowPlayingAt = this.nowPlayingId ? this.clock.now() : null;
+    }
+    this.syncTimer();
+    this.onChange();
+  }
   emitFx(kind) { this.fx = { n: ++this.fxCount, kind }; }
   getPlayer(id) { return this.players.find((p) => p.id === id) || null; }
   mustPlayer(id) {
@@ -244,6 +255,8 @@ class Room {
     if (has(s, 'secretRounds')) this.settings.secretRounds = clampInt(s.secretRounds, 1, 12, 3);
     if (has(s, 'timers')) this.settings.timers = Boolean(s.timers);
     if (has(s, 'family')) this.settings.family = Boolean(s.family);
+    // 'room': everyone hears the TV. 'remote': every player's own device plays the music.
+    if (has(s, 'venue')) this.settings.venue = s.venue === 'remote' ? 'remote' : 'room';
     this.touch();
   }
 
@@ -398,6 +411,7 @@ class Room {
       if (idx > this.g.cur.index) throw new GameError('That song hasn’t come up yet');
     }
     this.nowPlayingId = entry.id;
+    this.npSeen = null; // a replay restarts the song, even if it's the same one
     this.touch();
   }
 
@@ -750,6 +764,7 @@ class Room {
   static fromJSON(data, opts = {}) {
     const room = new Room(data.code, opts);
     for (const k of SAVED_FIELDS) if (has(data, k)) room[k] = data[k];
+    room.npSeen = room.nowPlayingId; // keep the saved start time
     room.settings = { ...new Room('x').settings, ...room.settings };
     room.custom = { loose: [], king: [], secret: [], ...room.custom };
     for (const p of [...room.players, ...room.audience]) p.connected = false;
@@ -790,6 +805,9 @@ class Room {
       ready: this.tracksReadiness() ? this.players.filter((p) => this.isDone(p.id)).map((p) => p.id) : [],
       fx: this.fx,
       timer: this.deadline ? { deadline: this.deadline, now: this.clock.now() } : null,
+      now: this.clock.now(),
+      // The song itself is public (the TV shows it); never who picked it.
+      nowPlaying: this.nowPlayingView(),
       canReact: REACT_PHASES.includes(this.phase),
     };
     if (this.phase === 'gameover') {
@@ -808,7 +826,6 @@ class Room {
       v.modes = Object.values(MODES);
       v.packs = Object.entries(PROMPTS.PACKS).map(([key, p]) => ({ key, name: p.name }));
       v.custom = this.custom;
-      v.nowPlaying = this.nowPlayingView();
     } else if (this.getAudience(pid)) {
       // Audience members see what the TV shows (public info only) and can react.
       const a = this.getAudience(pid);
@@ -836,7 +853,7 @@ class Room {
   nowPlayingView() {
     const entry = this.entryById(this.nowPlayingId);
     if (!entry) return null;
-    return { entryId: entry.id, number: this.currentQueue().indexOf(entry) + 1, song: songView(entry.song) };
+    return { entryId: entry.id, number: this.currentQueue().indexOf(entry) + 1, startedAt: this.nowPlayingAt, song: songView(entry.song) };
   }
 
   looseView(pid, isHost) {

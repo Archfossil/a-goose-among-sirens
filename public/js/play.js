@@ -3,8 +3,9 @@
 import {
   h, api, openStream, toast, store, playerById, chip, searchUrls, gooseIcon, modeIcon,
   mountInto, clearKept, syncClock, timerBadge, copyText, songHref, setlistText, youtubePlaylistUrl, REACTIONS,
-  gooseAvatar, HAT_LABELS,
+  gooseAvatar, HAT_LABELS, shareLink, shareToast,
 } from './common.js';
+import { updateListening } from './listen.js';
 
 const SESSION_KEY = 'goose.player';
 const NAME_KEY = 'goose.name';
@@ -31,6 +32,7 @@ function showJoin(error, prefillCode) {
   es?.close();
   statusEl.hidden = true;
   document.body.classList.remove('has-reactions');
+  updateListening(null);
   const codeIn = h('input', {
     id: 'code', name: 'code', required: true, maxlength: 4, autocomplete: 'off', autocapitalize: 'characters',
     spellcheck: 'false', placeholder: 'ABCD', class: 'code-input', value: prefillCode || session?.code || '',
@@ -116,6 +118,7 @@ function render() {
   mount(meBar(s), s.isAudience ? audienceView(s) : view(s), s.canReact ? reactionBar() : null);
   refreshPreviews();
   document.body.classList.toggle('has-reactions', Boolean(s.canReact));
+  updateListening(s);
 }
 
 // Big thumb-friendly reaction buttons; they float up on the TV.
@@ -159,6 +162,16 @@ function meBar(s) {
       },
     }, 'Leave') : null,
   );
+}
+
+function inviteCard(s) {
+  const url = `${location.origin}/?code=${s.code}`;
+  return card(
+    h('h2', null, 'Invite friends'),
+    h('p', { class: 'fine left' }, 'Send them the link. It drops them straight into this room.'),
+    h('div', { class: 'invite-row' },
+      h('code', { class: 'invite-url' }, url.replace(/^https?:\/\//, '')),
+      h('button', { class: 'btn primary', onclick: async () => shareToast(await shareLink(url), url) }, navigator.share ? 'Share' : 'Copy link')));
 }
 
 function hatPicker(s) {
@@ -217,6 +230,7 @@ function view(s) {
       card(h('div', { class: 'waiting' }, gooseAvatar(s.me, 'bob'), h('h2', null, 'You\u2019re in!'), h('p', null, 'Waiting for the host to start the game.'))),
       card(h('div', { class: 'kicker' }, 'Up next'), h('h2', { class: 'with-icon' }, modeIcon(s.mode), s.modeInfo.name), h('p', null, s.modeInfo.rules)),
       hatPicker(s),
+      inviteCard(s),
       suggestCard(s),
     ];
   }

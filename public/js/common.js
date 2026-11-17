@@ -237,8 +237,12 @@ let clockOffset = 0; // server time - local time
 
 /** Call with each state; keeps countdowns in sync even if device clocks disagree. */
 export function syncClock(state) {
-  if (state && state.timer) clockOffset = state.timer.now - Date.now();
+  const now = state && (state.now ?? state.timer?.now);
+  if (typeof now === 'number') clockOffset = now - Date.now();
 }
+
+/** The server's clock, as best we know it. */
+export function serverNow() { return Date.now() + clockOffset; }
 
 export function timerBadge(timer, cls = '') {
   if (!timer) return null;
@@ -306,3 +310,22 @@ export const REACTIONS = [
   { kind: 'heart', glyph: '❤️', label: 'Love' },
   { kind: 'honk', glyph: 'HONK!', label: 'Honk' },
 ];
+
+/**
+ * Share a link: the native share sheet on phones/tablets (needs https), otherwise copy it.
+ * Resolves to 'shared' | 'copied' | 'cancelled' | 'failed'.
+ */
+export async function shareLink(url, { title = 'A Goose Among Sirens', text = 'Join my game!' } = {}) {
+  const touch = window.matchMedia('(pointer: coarse)').matches;
+  if (touch && navigator.share) {
+    try { await navigator.share({ title, text, url }); return 'shared'; } catch (err) {
+      if (err && err.name === 'AbortError') return 'cancelled';
+    }
+  }
+  return (await copyText(url)) ? 'copied' : 'failed';
+}
+
+export function shareToast(result, url) {
+  if (result === 'copied') toast('Join link copied! Paste it in your group chat.');
+  else if (result === 'failed') toast(`Copy this link: ${url}`);
+}

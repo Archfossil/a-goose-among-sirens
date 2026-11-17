@@ -44,7 +44,7 @@ test('lobby rules: names, min players, mode lock', () => {
 test('settings are clamped', () => {
   const room = makeRoom(3);
   room.setSettings({ promptsPerPlayer: 99, secretRounds: -4, kingCycles: 'x' });
-  assert.deepEqual(room.settings, { promptsPerPlayer: 3, kingCycles: 1, secretRounds: 1, timers: false, family: false });
+  assert.deepEqual(room.settings, { promptsPerPlayer: 3, kingCycles: 1, secretRounds: 1, timers: false, family: false, venue: 'room' });
 });
 
 // ---------- A Goose is Loose! ----------
