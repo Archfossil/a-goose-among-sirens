@@ -36,6 +36,18 @@ Options:
 
 ---
 
+## Deploy (free, on Render)
+
+The game needs a Node server that keeps running, so static hosts like Netlify or Vercel won't work. Render's free plan runs it as-is.
+
+1. In [Render](https://render.com), choose **New → Blueprint** and pick this GitHub repo. Render reads `render.yaml` (build `npm install`, start `npm start`, health check `/api/info`).
+2. Once it's live, open `https://<your-app>.onrender.com/host` on the TV. Players go to `https://<your-app>.onrender.com` or scan the QR code.
+3. Every push to `main` redeploys automatically.
+
+The free plan sleeps after about 15 minutes idle and takes 30–60 seconds to wake, so open `/host` a minute before people join. Saved rooms are kept until the next deploy or restart.
+
+---
+
 ## Game modes
 
 All three modes accept **2–12 players** (3+ is the real party experience; fewer is handy for testing or demos). King Goose needs at least 2. The host screen is not a player.

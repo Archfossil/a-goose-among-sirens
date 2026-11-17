@@ -1,0 +1,22 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# In Render: New -> Blueprint -> pick this repo. Every push to main redeploys.
+services:
+  - type: web
+    name: a-goose-among-sirens
+    runtime: node
+    plan: free
+    branch: main
+    autoDeploy: true
+    # No dependencies, so install is instant; it's here so adding one later just works.
+    buildCommand: npm install
+    startCommand: npm start
+    # Render routes traffic only after this returns 200.
+    healthCheckPath: /api/info
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Render's free plan has no persistent disk: saved rooms live until the next
+      # deploy or restart. That's fine for a party. On a paid plan, attach a disk
+      # and point DATA_DIR at it to keep rooms across deploys.
+      - key: DATA_DIR
+        value: ./data
