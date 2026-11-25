@@ -52,9 +52,11 @@ function createSession() {
 function registerSession(room, hostToken, playerTokens, touched) {
   const s = { room, hostToken, playerTokens, streams: new Set(), touched };
   room.onChange = () => { broadcast(s); scheduleSave(); };
-  // Reactions are fire-and-forget: only the host screen needs them.
+  // Reactions are fire-and-forget: the host screen shows them all. When everyone is remote there's
+  // no shared TV, so every phone gets them too (to see them float by and hear the honks).
   room.onEvent = (type, data) => {
-    for (const st of s.streams) if (st.role === 'host') sendEvent(st, type, data);
+    const toPhones = type === 'react' && room.settings.venue === 'remote';
+    for (const st of s.streams) if (st.role === 'host' || toPhones) sendEvent(st, type, data);
   };
   sessions.set(room.code, s);
   scheduleSave();

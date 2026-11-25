@@ -104,7 +104,7 @@ The Goose rotates each round. The default is 3 rounds, adjustable up to 12.
   | Crowd Pleaser | Picked the most-reacted song |
 
 - **End-of-game setlist.** When the game ends, the host screen lists every song that was played, who picked it and the prompt it answered. It has a **Play all on YouTube** button (an instant, account-free YouTube playlist) and **Copy setlist**. Each phone gets a *Songs you discovered tonight* list of the other players' picks with links, so everyone takes home new music.
-- **Live reactions.** While songs play, phones show 🔥 😂 😭 🤯 💀 ❤️ and **HONK!** buttons, and each tap floats up through the WebGL scene on the TV. HONK! also makes the goose hop. Each player is limited to about 3 reactions a second.
+- **Live reactions.** While songs play, phones show 🔥 😂 😭 🤯 💀 ❤️ and **HONK!** buttons, and each tap floats up through the WebGL scene on the TV. HONK! also makes the goose hop. In *Everyone remote* games, every phone also shows the reactions floating by (with who sent them) and plays the honks out loud (the 🔊 Mute button in the music dock silences them). Each player is limited to about 3 reactions a second.
 - **Optional timers** (*Timers: On* in the lobby):
 
   | Phase | Time limit |

@@ -36,6 +36,11 @@ function ensureDock() {
   document.getElementById('app').after(dock);
 }
 
+/** True when the player muted this device's game audio. */
+export function isDeviceMuted() {
+  return muted;
+}
+
 /** Call with every new state (or null when leaving the room). */
 export function updateListening(state) {
   ensureDock();

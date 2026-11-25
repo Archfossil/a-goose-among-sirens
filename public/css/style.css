@@ -349,6 +349,25 @@ details.custom .count { color: var(--muted); font-weight: 600; }
 .react.pop { animation: pop 0.3s cubic-bezier(.2, 1.6, .4, 1); }
 body.has-reactions #app { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 
+/* Remote games: other players' reactions float up the phone screen. */
+.react-float {
+  position: fixed; bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 30; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  animation: react-float 2.4s ease-out forwards;
+}
+.react-float .rf-glyph { font-size: 34px; line-height: 1; }
+.react-float.honk .rf-glyph { font-size: 18px; font-weight: 700; padding: 4px 10px; border-radius: 12px; color: var(--accent-ink); background: var(--accent); }
+.react-float .rf-name { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 8px; color: #fff; background: var(--c); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes react-float {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  12% { transform: translateY(-20px) scale(1.1); opacity: 1; }
+  100% { transform: translateY(-55vh) scale(1); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .react-float { animation: react-fade 1.6s ease-out forwards; }
+  @keyframes react-fade { 0%, 60% { opacity: 1; } 100% { opacity: 0; } }
+}
+
 
 /* ================= round 3: avatars, title cards, awards, mobile ================= */
 

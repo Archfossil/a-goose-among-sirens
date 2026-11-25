@@ -5,7 +5,8 @@ import {
   mountInto, clearKept, syncClock, timerBadge, copyText, songHref, setlistText, youtubePlaylistUrl, REACTIONS,
   gooseAvatar, HAT_LABELS, shareLink, shareToast,
 } from './common.js';
-import { updateListening } from './listen.js';
+import { updateListening, isDeviceMuted } from './listen.js';
+import { sfx } from './sfx.js';
 
 const SESSION_KEY = 'goose.player';
 const NAME_KEY = 'goose.name';
@@ -81,6 +82,7 @@ function connect() {
   es = openStream({ code: session.code, role: 'player', id: session.playerId, token: session.token }, {
     onState: (s) => { state = s; syncClock(s); render(); },
     onStatus: (ok) => { statusEl.hidden = ok; },
+    events: { react: remoteReaction },
     onFatal: (msg, data) => {
       const code = session?.code;
       session = null;
@@ -132,6 +134,22 @@ function reactionBar() {
       act('react', { kind: r.kind }).catch(() => {});
     },
   }, r.glyph)));
+}
+
+// Remote games have no shared TV: show everyone's reactions floating up here, and honk out loud.
+function remoteReaction(r) {
+  if (state?.settings?.venue !== 'remote') return;
+  const def = REACTIONS.find((x) => x.kind === r.kind);
+  if (!def) return;
+  if (r.kind === 'honk' && !isDeviceMuted()) sfx.honk();
+  if (document.querySelectorAll('.react-float').length > 24) return;
+  const el = h('div', {
+    class: `react-float${r.kind === 'honk' ? ' honk' : ''}`,
+    'aria-hidden': 'true',
+    style: { left: `${8 + Math.random() * 78}%`, '--c': r.color || 'var(--accent)' },
+  }, h('span', { class: 'rf-glyph' }, def.glyph), r.name ? h('span', { class: 'rf-name' }, r.name) : null);
+  el.addEventListener('animationend', () => el.remove());
+  document.body.append(el);
 }
 
 // A buzz when something happens that you might be looking away for.

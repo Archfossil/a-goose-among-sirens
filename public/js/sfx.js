@@ -1,4 +1,5 @@
-// Tiny synthesized sound effects for the host screen (Web Audio, no files).
+// Tiny synthesized sound effects (Web Audio, no files). Used on the host screen, and for
+// honks on phones in everyone-remote games.
 // Kept short and fairly quiet so they sit on top of the music instead of fighting it.
 
 const STORE_KEY = 'goose.sfx';
