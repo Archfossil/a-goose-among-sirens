@@ -25,7 +25,24 @@ const AUDIENCE_COLOR = '#d7c9e6';
 // Fields that make up a room's saved state (everything except runtime plumbing).
 const SAVED_FIELDS = ['code', 'players', 'audience', 'mode', 'settings', 'phase', 'g', 'nowPlayingId', 'nowPlayingAt', 'fx', 'fxCount',
   'entryCount', 'version', 'gameNo', 'history', 'custom', 'customCount', 'stats', 'favorites'];
-const HATS = ['none', 'crown', 'tophat', 'party', 'beanie', 'flower', 'headphones', 'shades', 'bowtie', 'cowboy'];
+const HATS = ['none', 'crown', 'tophat', 'party', 'beanie', 'flower', 'headphones', 'cowboy',
+  'pirate', 'wizard', 'viking', 'chef', 'halo', 'bucket', 'propeller'];
+// Worn together with a hat. (Shades and the bow tie used to be hats; old saves are migrated.)
+const ACCESSORIES = ['none', 'shades', 'heartshades', 'monocle', 'bowtie', 'scarf', 'chain'];
+const FEATHERS = ['white', 'grey', 'brown', 'black', 'gold'];
+const FACES = ['normal', 'happy', 'angry', 'sleepy', 'starry'];
+const LOOK_DEFAULTS = { accessory: 'none', feathers: 'white', face: 'normal' };
+const LOOK_OPTIONS = { accessory: ACCESSORIES, feathers: FEATHERS, face: FACES };
+
+/** Fill in / repair the cosmetic fields of a player or audience member. */
+function normalizeLook(p) {
+  if (ACCESSORIES.includes(p.hat) && !HATS.includes(p.hat)) { p.accessory = p.accessory && p.accessory !== 'none' ? p.accessory : p.hat; p.hat = 'none'; }
+  if (!HATS.includes(p.hat)) p.hat = 'none';
+  for (const [k, list] of Object.entries(LOOK_OPTIONS)) if (!list.includes(p[k])) p[k] = LOOK_DEFAULTS[k];
+  return p;
+}
+
+const lookOf = (p) => ({ hat: p.hat, accessory: p.accessory, feathers: p.feathers, face: p.face });
 
 const REAL_CLOCK = {
   now: () => Date.now(),
@@ -176,7 +193,7 @@ class Room {
   addAudience(id, rawName, hat) {
     const name = this.cleanName(rawName);
     if (this.audience.length >= MAX_AUDIENCE) throw new GameError('The room is packed. Try again later!');
-    const member = { id, name, color: AUDIENCE_COLOR, hat: HATS.includes(hat) ? hat : 'none', connected: false };
+    const member = normalizeLook({ id, name, color: AUDIENCE_COLOR, hat: HATS.includes(hat) ? hat : 'none', connected: false });
     this.audience.push(member);
     this.touch();
     return member;
@@ -189,7 +206,10 @@ class Room {
     while (this.audience.length && this.players.length < MAX_PLAYERS) {
       const a = this.audience.shift();
       this.addPlayer(a.id, a.name, a.hat === 'none' ? undefined : a.hat, true);
-      this.getPlayer(a.id).connected = a.connected;
+      const p = this.getPlayer(a.id);
+      p.connected = a.connected;
+      for (const k of Object.keys(LOOK_OPTIONS)) p[k] = a[k];
+      normalizeLook(p);
     }
   }
 
@@ -202,7 +222,7 @@ class Room {
     const usedHats = new Set(this.players.map((p) => p.hat));
     const freeHats = HATS.filter((x) => x !== 'none' && !usedHats.has(x));
     const pick = HATS.includes(hat) ? hat : (freeHats.length ? freeHats[Math.floor(this.rng() * freeHats.length)] : 'none');
-    const player = { id, name, color, hat: pick, score: 0, connected: false };
+    const player = normalizeLook({ id, name, color, hat: pick, score: 0, connected: false });
     this.players.push(player);
     this.touch();
     return player;
@@ -255,6 +275,22 @@ class Room {
     if (!p) throw new GameError('You are not in this room', 403);
     if (!HATS.includes(hat)) throw new GameError('Unknown hat');
     p.hat = hat;
+    this.touch();
+  }
+
+  /** Change any of: accessory, feathers, face. Cosmetic only, so allowed any time (like hats). */
+  setLook(id, look) {
+    const p = this.getPlayer(id) || this.getAudience(id);
+    if (!p) throw new GameError('You are not in this room', 403);
+    if (!look || typeof look !== 'object') throw new GameError('Nothing to change');
+    const next = {};
+    for (const [k, list] of Object.entries(LOOK_OPTIONS)) {
+      if (!has(look, k)) continue;
+      if (!list.includes(look[k])) throw new GameError(`Unknown ${k}`);
+      next[k] = look[k];
+    }
+    if (!Object.keys(next).length) throw new GameError('Nothing to change');
+    Object.assign(p, next);
     this.touch();
   }
 
@@ -789,7 +825,7 @@ class Room {
     room.npSeen = room.nowPlayingId; // keep the saved start time
     room.settings = { ...new Room('x').settings, ...room.settings };
     room.custom = { loose: [], king: [], secret: [], ...room.custom };
-    for (const p of [...room.players, ...room.audience]) p.connected = false;
+    for (const p of [...room.players, ...room.audience]) { p.connected = false; normalizeLook(p); }
     room.syncTimer(); // a running countdown restarts from full time
     return room;
   }
@@ -822,8 +858,11 @@ class Room {
       version: this.version,
       minPlayers: this.minPlayers(),
       maxPlayers: MAX_PLAYERS,
-      players: this.players.map(({ id, name, color, hat, score, connected }) => ({ id, name, color, hat, score, connected })),
+      players: this.players.map((p) => ({ id: p.id, name: p.name, color: p.color, ...lookOf(p), score: p.score, connected: p.connected })),
       hats: HATS,
+      accessories: ACCESSORIES,
+      feathers: FEATHERS,
+      faces: FACES,
       colors: COLORS,
       ready: this.tracksReadiness() ? this.players.filter((p) => this.isDone(p.id)).map((p) => p.id) : [],
       fx: this.fx,
@@ -844,7 +883,7 @@ class Room {
       v.favoritesIn = Object.keys(this.favorites).length;
       if (!isHost) v.myFavorite = this.favorites[pid] || null;
     }
-    v.audience = this.audience.map(({ id, name, hat, connected }) => ({ id, name, hat, connected }));
+    v.audience = this.audience.map((a) => ({ id: a.id, name: a.name, ...lookOf(a), connected: a.connected }));
     if (isHost) {
       v.modes = Object.values(MODES);
       v.packs = Object.entries(PROMPTS.PACKS).map(([key, p]) => ({ key, name: p.name }));
@@ -852,7 +891,7 @@ class Room {
     } else if (this.getAudience(pid)) {
       // Audience members see what the TV shows (public info only) and can react.
       const a = this.getAudience(pid);
-      v.me = { id: a.id, name: a.name, color: a.color, hat: a.hat, score: 0 };
+      v.me = { id: a.id, name: a.name, color: a.color, ...lookOf(a), score: 0 };
       v.isAudience = true;
       v.mySuggestions = [];
       if (this.g && this.phase !== 'gameover') {
@@ -862,7 +901,7 @@ class Room {
       return v;
     } else {
       const me = this.getPlayer(pid);
-      v.me = me ? { id: me.id, name: me.name, color: me.color, hat: me.hat, score: me.score } : null;
+      v.me = me ? { id: me.id, name: me.name, color: me.color, ...lookOf(me), score: me.score } : null;
       v.mySuggestions = Object.entries(this.custom).flatMap(([mode, list]) => list.filter((c) => c.by === pid).map((c) => ({ mode, text: c.text })));
     }
     if (this.g && this.phase !== 'gameover') {
@@ -943,4 +982,4 @@ class Room {
   }
 }
 
-module.exports = { MAX_AUDIENCE, Room, MODES, MIN_PLAYERS, SWAPS_PER_GAME, MAX_PLAYERS, TIMERS, REACTIONS, HATS, GameError, shuffle };
+module.exports = { MAX_AUDIENCE, Room, MODES, MIN_PLAYERS, SWAPS_PER_GAME, MAX_PLAYERS, TIMERS, REACTIONS, HATS, ACCESSORIES, FEATHERS, FACES, GameError, shuffle };

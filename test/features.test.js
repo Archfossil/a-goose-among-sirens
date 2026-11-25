@@ -172,6 +172,53 @@ test('hats: auto-assigned, changeable, validated', () => {
   assert.throws(() => room.setHat('p0', '<svg>'), /Unknown hat/);
 });
 
+test('goose looks: accessory, feathers and face are validated and shown', () => {
+  const { room } = room3('loose');
+  assert.deepEqual(
+    (({ accessory, feathers, face }) => ({ accessory, feathers, face }))(room.view('p0').me),
+    { accessory: 'none', feathers: 'white', face: 'normal' }, 'sensible defaults');
+  room.setLook('p0', { accessory: 'scarf', feathers: 'black', face: 'starry' });
+  const p = room.view(null).players[0];
+  assert.equal(p.accessory, 'scarf');
+  assert.equal(p.feathers, 'black');
+  assert.equal(p.face, 'starry');
+  room.setHat('p0', 'wizard');
+  assert.equal(room.view('p0').me.accessory, 'scarf', 'hat and accessory are worn together');
+  room.start();
+  room.setLook('p0', { face: 'happy' });
+  assert.equal(room.view('p0').me.face, 'happy', 'cosmetic, so allowed mid-game');
+  assert.throws(() => room.setLook('p0', { feathers: 'url(x)' }), /Unknown feathers/);
+  assert.throws(() => room.setLook('p0', { score: 99 }), /Nothing to change/);
+  assert.throws(() => room.setLook('nobody', { face: 'happy' }), /not in this room/);
+  assert.equal(room.view('p0').me.score, 0);
+});
+
+test('goose looks: old saves with shades / bow tie hats become accessories', () => {
+  const { room } = room3('loose');
+  const saved = room.toJSON();
+  saved.players[0].hat = 'shades';
+  saved.players[1].hat = 'bowtie';
+  delete saved.players[2].feathers;
+  const back = Room.fromJSON(JSON.parse(JSON.stringify(saved)));
+  assert.equal(back.players[0].hat, 'none');
+  assert.equal(back.players[0].accessory, 'shades');
+  assert.equal(back.players[1].accessory, 'bowtie');
+  assert.equal(back.players[2].feathers, 'white');
+});
+
+test('goose looks follow audience members when they get a seat', () => {
+  const { room } = room3('loose');
+  room.start();
+  room.join('late', 'Late', 'pirate');
+  room.setLook('late', { feathers: 'gold', face: 'sleepy' });
+  room.backToLobby();
+  const p = room.getPlayer('late');
+  assert.ok(p, 'seated');
+  assert.equal(p.hat, 'pirate');
+  assert.equal(p.feathers, 'gold');
+  assert.equal(p.face, 'sleepy');
+});
+
 test('players can leave between games but not mid-game', () => {
   const { room } = room3('loose');
   room.addPlayer('p3', 'Dee');

@@ -3,7 +3,8 @@
 // One persistent YouTube player per device (via the IFrame API) so that once the browser
 // has allowed sound, later songs keep playing without another tap. Each song seeks to
 // where the host is (server start time + elapsed), so everyone hears the same moment.
-// Spotify can't be started by a page, so Spotify songs show their own player to tap.
+// Spotify works the same way through its iFrame API (one persistent embed, loadUri + play).
+// Some browsers (Safari especially) still block that without a tap, so a tap button is offered.
 
 import { h, store, searchUrls, serverNow } from './common.js';
 
@@ -21,6 +22,11 @@ let lastNp = null;
 let active = false;
 let muted = store.get(MUTE_KEY) === true;
 let otherKey = null;
+let sp = null;               // Spotify EmbedController
+let spReady = null;          // Promise<EmbedController>
+let spPlaying = false;
+let spLoadedKey = null;      // song key whose content the embed is loading/showing
+let spWantKey = null;        // song key that should start playing once the embed is ready
 
 function ensureDock() {
   if (dock) return;
@@ -28,11 +34,12 @@ function ensureDock() {
   ui = {
     head: h('div', { class: 'ld-head' }),
     video: h('div', { class: 'ld-video', hidden: true }, h('div', { id: 'ld-yt' })),
+    spotify: h('div', { class: 'ld-spotify', hidden: true }, h('div', { id: 'ld-sp' })),
     other: h('div', { class: 'ld-other' }),
     tap: h('button', { class: 'btn primary big ld-tap', hidden: true, onclick: tapToPlay }, '▶ Tap to play the music'),
     note: h('p', { class: 'fine left ld-note' }),
   };
-  dock.append(ui.head, ui.tap, ui.video, ui.other, ui.note);
+  dock.append(ui.head, ui.tap, ui.video, ui.spotify, ui.other, ui.note);
   document.getElementById('app').after(dock);
 }
 
@@ -70,6 +77,7 @@ function renderHead(state) {
 
 function renderIdle(text) {
   ui.video.hidden = true;
+  ui.spotify.hidden = true;
   ui.tap.hidden = true;
   ui.other.replaceChildren();
   otherKey = null;
@@ -86,6 +94,8 @@ function sync() {
   ui.tap.hidden = true;
 
   if (np.song.kind === 'youtube') {
+    pauseSpotify();
+    ui.spotify.hidden = true;
     ui.other.replaceChildren();
     otherKey = null;
     ui.video.hidden = false;
@@ -107,19 +117,95 @@ function sync() {
 
   pauseYouTube();
   ui.video.hidden = true;
+  if (np.song.kind === 'spotify') {
+    ui.other.replaceChildren();
+    otherKey = null;
+    ui.spotify.hidden = false;
+    ui.note.textContent = 'Synced with the host. (30-second preview unless you’re logged in to Spotify.)';
+    playSpotify(np, key);
+    return;
+  }
+
+  pauseSpotify();
+  ui.spotify.hidden = true;
   if (otherKey === key) return;
   otherKey = key;
-  if (np.song.kind === 'spotify') {
-    const src = `https://open.spotify.com/embed/${encodeURIComponent(np.song.type)}/${encodeURIComponent(np.song.id)}?utm_source=generator`;
-    ui.other.replaceChildren(h('iframe', { class: 'ld-spotify', src, title: 'Spotify player', allow: 'autoplay; encrypted-media; fullscreen; picture-in-picture', loading: 'lazy' }));
-    ui.note.textContent = 'Spotify can’t start by itself: tap ▶ in the player. (30-second preview unless you’re logged in to Spotify.)';
-  } else {
-    const u = searchUrls(np.song.text);
-    ui.other.replaceChildren(h('div', { class: 'np-links' },
-      h('a', { href: u.youtubeWeb, target: '_blank', rel: 'noopener' }, 'Search YouTube ↗'),
-      h('a', { href: u.spotify, target: '_blank', rel: 'noopener' }, 'Search Spotify ↗')));
-    ui.note.textContent = 'This song was typed in by hand. Open it to listen along.';
-  }
+  const u = searchUrls(np.song.text);
+  ui.other.replaceChildren(h('div', { class: 'np-links' },
+    h('a', { href: u.youtubeWeb, target: '_blank', rel: 'noopener' }, 'Search YouTube ↗'),
+    h('a', { href: u.spotify, target: '_blank', rel: 'noopener' }, 'Search Spotify ↗')));
+  ui.note.textContent = 'This song was typed in by hand. Open it to listen along.';
+}
+
+// ---------- Spotify ----------
+
+function spotifyUri(song) {
+  return `spotify:${song.type}:${song.id}`;
+}
+
+function playSpotify(np, key) {
+  loadSpotify(spotifyUri(np.song), key).then((ctrl) => {
+    if (playingKey !== key) return;
+    spWantKey = muted ? null : key;
+    if (spLoadedKey !== key) {
+      spLoadedKey = key;
+      spPlaying = false;
+      // Playback starts on the 'ready' event that follows the load.
+      ctrl.loadUri(spotifyUri(np.song), false, Math.floor(position(np)));
+    } else if (!muted) {
+      startSpotify();
+    }
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(() => {
+      if (playingKey === key && !spPlaying && !muted) showTap('▶ Tap to play the music');
+    }, 3500);
+  }).catch(() => {
+    ui.note.textContent = 'Couldn’t load the Spotify player. Check your connection.';
+  });
+}
+
+/** Seek to where the host is and play. Safe to call repeatedly. */
+function startSpotify() {
+  if (!sp || !lastNp || lastNp.song.kind !== 'spotify') return;
+  sp.play();
+  // play() honours the load's start time; a seek keeps late joiners / resumes in sync too.
+  const at = Math.floor(position(lastNp));
+  if (at > 1) setTimeout(() => { if (sp) sp.seek(at); }, 400);
+}
+
+function pauseSpotify() {
+  spWantKey = null;
+  if (sp && spPlaying) sp.pause();
+}
+
+function loadSpotify(firstUri, firstKey) {
+  if (spReady) return spReady;
+  spLoadedKey = firstKey;
+  spReady = new Promise((resolve, reject) => {
+    const create = (IFrameAPI) => {
+      IFrameAPI.createController(document.getElementById('ld-sp'), { uri: firstUri, width: '100%', height: 152 }, (ctrl) => {
+        sp = ctrl;
+        ctrl.addListener('ready', () => {
+          if (spWantKey && spWantKey === playingKey) startSpotify();
+        });
+        ctrl.addListener('playback_update', (e) => {
+          const d = (e && e.data) || {};
+          spPlaying = !d.isPaused && !d.isBuffering;
+          if (spPlaying) ui.tap.hidden = true;
+        });
+        resolve(ctrl);
+      });
+    };
+    if (window.SpotifyIframeApi) { create(window.SpotifyIframeApi); return; }
+    const prev = window.onSpotifyIframeApiReady;
+    window.onSpotifyIframeApiReady = (api) => { window.SpotifyIframeApi = api; if (prev) prev(api); create(api); };
+    const sc = document.createElement('script');
+    sc.src = 'https://open.spotify.com/embed/iframe-api/v1';
+    sc.async = true;
+    sc.onerror = () => { spReady = null; spLoadedKey = null; reject(new Error('Spotify API failed to load')); };
+    document.head.append(sc);
+  });
+  return spReady;
 }
 
 /** Seconds into the song the host is at right now. */
@@ -136,13 +222,19 @@ function showTap(label) {
 function tapToPlay() {
   // Runs inside a tap, so the browser allows sound from here on.
   ui.tap.hidden = true;
-  if (!yt || !lastNp || lastNp.song.kind !== 'youtube') return;
+  if (!lastNp) return;
+  if (lastNp.song.kind === 'spotify') { spWantKey = playingKey; startSpotify(); return; }
+  if (!yt || lastNp.song.kind !== 'youtube') return;
   yt.seekTo(position(lastNp), true);
   if (!muted) yt.unMute();
   yt.playVideo();
 }
 
 function applyMute() {
+  // The Spotify embed has no volume control: muting pauses it, unmuting jumps back in sync.
+  if (lastNp && lastNp.song.kind === 'spotify' && playingKey) {
+    if (muted) pauseSpotify(); else { spWantKey = playingKey; startSpotify(); }
+  }
   if (!yt || typeof yt.mute !== 'function') return;
   if (muted) yt.mute(); else yt.unMute();
 }
@@ -156,7 +248,8 @@ function stopAll() {
   playingKey = null;
   otherKey = null;
   pauseYouTube();
-  if (ui) { ui.other.replaceChildren(); ui.tap.hidden = true; }
+  pauseSpotify();
+  if (ui) { ui.other.replaceChildren(); ui.tap.hidden = true; ui.spotify.hidden = true; }
 }
 
 function loadYouTube() {

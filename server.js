@@ -272,6 +272,7 @@ function disconnectPlayer(s, playerId, message) {
 
 const PLAYER_ACTIONS = {
   setHat: (room, b, s, pid) => room.setHat(pid, b.hat),
+  setLook: (room, b, s, pid) => room.setLook(pid, b.look),
   setColor: (room, b, s, pid) => room.setColor(pid, b.color),
   rename: (room, b, s, pid) => ({ name: room.rename(pid, b.name) }),
   leave: (room, b, s, pid) => { room.leave(pid); disconnectPlayer(s, pid, 'You left the room'); },

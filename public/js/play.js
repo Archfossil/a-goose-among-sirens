@@ -3,7 +3,7 @@
 import {
   h, api, openStream, toast, store, playerById, chip, searchUrls, gooseIcon, modeIcon,
   mountInto, clearKept, syncClock, timerBadge, copyText, songHref, setlistText, youtubePlaylistUrl, REACTIONS,
-  gooseAvatar, HAT_LABELS, shareLink, shareToast,
+  gooseAvatar, HAT_LABELS, ACCESSORY_LABELS, FEATHER_LABELS, FEATHER_SWATCH, FACE_LABELS, shareLink, shareToast,
 } from './common.js';
 import { updateListening, isDeviceMuted } from './listen.js';
 import { sfx } from './sfx.js';
@@ -197,21 +197,62 @@ function inviteCard(s) {
       h('button', { class: 'btn primary', onclick: async () => shareToast(await shareLink(url), url) }, navigator.share ? 'Share' : 'Copy link')));
 }
 
+let lookTab = 'hat';
+const LOOK_TABS = [
+  { key: 'hat', label: 'Hat' },
+  { key: 'accessory', label: 'Extras' },
+  { key: 'feathers', label: 'Feathers' },
+  { key: 'face', label: 'Face' },
+];
+
 function hatPicker(s) {
+  const me = s.me;
+  const setLook = async (look) => { try { await act('setLook', { look }); } catch (err) { toast(err.message); } };
+  // One grid of goose headshots per tab; each option previews on your own goose.
+  const grid = (label, options, current, labels, preview, choose) => h('div', { class: 'hat-grid', role: 'radiogroup', 'aria-label': label },
+    options.map((opt) => h('button', {
+      class: `hat${opt === current ? ' selected' : ''}`,
+      role: 'radio',
+      'aria-checked': opt === current ? 'true' : 'false',
+      'aria-label': labels[opt] || opt,
+      title: labels[opt] || opt,
+      onclick: () => { if (opt !== current) choose(opt); },
+    }, gooseAvatar({ ...me, ...preview(opt) }, 'head'))));
+
+  let body;
+  if (lookTab === 'accessory') {
+    body = grid('Accessory', s.accessories || [], me.accessory, ACCESSORY_LABELS, (a) => ({ accessory: a }), (accessory) => setLook({ accessory }));
+  } else if (lookTab === 'feathers') {
+    body = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Feathers' }, (s.feathers || []).map((f) => h('button', {
+      class: `swatch feather${f === 'black' ? ' dark' : ''}${f === me.feathers ? ' selected' : ''}`,
+      style: { '--c': FEATHER_SWATCH[f] || '#fff' },
+      role: 'radio',
+      'aria-checked': f === me.feathers ? 'true' : 'false',
+      'aria-label': FEATHER_LABELS[f] || f,
+      title: FEATHER_LABELS[f] || f,
+      onclick: () => { if (f !== me.feathers) setLook({ feathers: f }); },
+    })));
+  } else if (lookTab === 'face') {
+    // Glasses would hide the eyes, so the previews leave them off.
+    const eyewear = ['shades', 'heartshades', 'monocle'].includes(me.accessory);
+    body = grid('Expression', s.faces || [], me.face, FACE_LABELS, (face) => ({ face, accessory: eyewear ? 'none' : me.accessory }), (face) => setLook({ face }));
+  } else {
+    body = grid('Hat', s.hats, me.hat, HAT_LABELS, (hat) => ({ hat }), async (hat) => { try { await act('setHat', { hat }); } catch (err) { toast(err.message); } });
+  }
+
   return card(
     h('h2', null, 'Your goose'),
+    h('div', { class: 'look-preview' }, gooseAvatar(me, 'look-big')),
     nameEditor(s),
     s.isAudience ? null : colorPicker(s),
-    h('div', { class: 'kicker' }, 'Hat'),
-    h('div', { class: 'hat-grid', role: 'radiogroup', 'aria-label': 'Hat' }, s.hats.map((hat) => h('button', {
-      class: `hat${hat === s.me.hat ? ' selected' : ''}`,
-      role: 'radio',
-      'aria-checked': hat === s.me.hat ? 'true' : 'false',
-      'aria-label': HAT_LABELS[hat] || hat,
-      title: HAT_LABELS[hat] || hat,
-      onclick: async () => { try { await act('setHat', { hat }); } catch (err) { toast(err.message); } },
-    }, gooseAvatar({ color: s.me.color, hat }, 'head'))),
-  ));
+    h('div', { class: 'segmented look-tabs', role: 'tablist', 'aria-label': 'Customize' }, LOOK_TABS.map((t) => h('button', {
+      class: t.key === lookTab ? 'on' : '',
+      role: 'tab',
+      'aria-selected': t.key === lookTab ? 'true' : 'false',
+      onclick: () => { lookTab = t.key; render(); },
+    }, t.label))),
+    body,
+  );
 }
 
 function nameEditor(s) {
