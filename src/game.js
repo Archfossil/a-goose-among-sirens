@@ -158,10 +158,10 @@ class Room {
   entryById(id) { return this.currentQueue().find((e) => e.id === id) || null; }
 
   // ---------- lobby ----------
-  cleanName(rawName) {
+  cleanName(rawName, exceptId = null) {
     const name = String(rawName ?? '').trim().replace(/\s+/g, ' ').slice(0, 16);
     if (!name) throw new GameError('Pick a name first');
-    const taken = [...this.players, ...this.audience].some((p) => p.name.toLowerCase() === name.toLowerCase());
+    const taken = [...this.players, ...this.audience].some((p) => p.id !== exceptId && p.name.toLowerCase() === name.toLowerCase());
     if (taken) throw new GameError('Someone already took that name');
     return name;
   }
@@ -225,6 +225,28 @@ class Room {
     if (this.phase !== 'lobby' && this.phase !== 'gameover') throw new GameError('You can leave once this game ends');
     this.mustPlayer(id);
     this.players = this.players.filter((p) => p.id !== id);
+    this.touch();
+  }
+
+  /** Change your name, but only between games, so nobody's identity shifts mid-round. */
+  rename(id, rawName) {
+    const p = this.getPlayer(id) || this.getAudience(id);
+    if (!p) throw new GameError('You are not in this room', 403);
+    if (this.phase !== 'lobby' && this.phase !== 'gameover') throw new GameError('You can change your name before the next game starts');
+    p.name = this.cleanName(rawName, id);
+    this.touch();
+    return p.name;
+  }
+
+  /** Pick your goose's color. Colors stay unique so everyone is easy to tell apart on the TV. */
+  setColor(id, color) {
+    const p = this.getPlayer(id);
+    if (!p) throw new GameError(this.getAudience(id) ? 'You\u2019ll pick a color when you join the next game' : 'You are not in this room', 403);
+    if (this.phase !== 'lobby' && this.phase !== 'gameover') throw new GameError('You can change your color before the next game starts');
+    if (!COLORS.includes(color)) throw new GameError('Unknown color');
+    const owner = this.players.find((q) => q.id !== id && q.color === color);
+    if (owner) throw new GameError(`${owner.name} already has that color`);
+    p.color = color;
     this.touch();
   }
 
@@ -802,6 +824,7 @@ class Room {
       maxPlayers: MAX_PLAYERS,
       players: this.players.map(({ id, name, color, hat, score, connected }) => ({ id, name, color, hat, score, connected })),
       hats: HATS,
+      colors: COLORS,
       ready: this.tracksReadiness() ? this.players.filter((p) => this.isDone(p.id)).map((p) => p.id) : [],
       fx: this.fx,
       timer: this.deadline ? { deadline: this.deadline, now: this.clock.now() } : null,

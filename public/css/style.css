@@ -553,3 +553,17 @@ input, textarea { font-size: max(16px, 1em); } /* iOS zooms the page on focus be
 body.has-reactions.has-dock #app { padding-bottom: 16px; }
 body.has-reactions.has-dock #listen-dock { margin-bottom: calc(100px + env(safe-area-inset-bottom)); }
 .np-remote { font-size: 0.85em; color: var(--muted); }
+
+/* ================= rename + goose colors ================= */
+.rename-row input { font-size: 16px; }
+.swatches { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
+.swatch {
+  aspect-ratio: 1; min-height: 40px; border-radius: 50%; cursor: pointer; position: relative;
+  background: var(--c); border: 3px solid rgba(255, 255, 255, 0.15); display: grid; place-items: center;
+  transition: transform 0.1s;
+}
+.swatch:active:not(:disabled) { transform: scale(0.92); }
+.swatch.selected { border-color: #fff; box-shadow: 0 0 0 3px var(--c); }
+.swatch.selected::after { content: '\2713'; color: #1a1030; font-weight: 700; font-size: 18px; }
+.swatch:disabled { cursor: not-allowed; opacity: 0.35; }
+.swatch-taken { color: #1a1030; font-weight: 700; font-size: 14px; }

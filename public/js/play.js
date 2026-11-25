@@ -176,7 +176,10 @@ function inviteCard(s) {
 
 function hatPicker(s) {
   return card(
-    h('h2', null, 'Dress your goose'),
+    h('h2', null, 'Your goose'),
+    nameEditor(s),
+    s.isAudience ? null : colorPicker(s),
+    h('div', { class: 'kicker' }, 'Hat'),
     h('div', { class: 'hat-grid', role: 'radiogroup', 'aria-label': 'Hat' }, s.hats.map((hat) => h('button', {
       class: `hat${hat === s.me.hat ? ' selected' : ''}`,
       role: 'radio',
@@ -186,6 +189,48 @@ function hatPicker(s) {
       onclick: async () => { try { await act('setHat', { hat }); } catch (err) { toast(err.message); } },
     }, gooseAvatar({ color: s.me.color, hat }, 'head'))),
   ));
+}
+
+function nameEditor(s) {
+  const key = 'rename';
+  return h('form', {
+    class: 'input-row rename-row',
+    onsubmit: async (e) => {
+      e.preventDefault();
+      const input = e.currentTarget.querySelector('input');
+      const name = input.value.trim();
+      if (!name || name === s.me.name) return;
+      try {
+        const res = await act('rename', { name });
+        store.set(NAME_KEY, res.name);
+        clearKept(app, key);
+        input.blur();
+        toast(`You're now ${res.name}`);
+      } catch (err) { toast(err.message); }
+    },
+  },
+  h('input', { type: 'text', 'data-keep': key, maxlength: 16, placeholder: s.me.name, 'aria-label': 'New name', autocomplete: 'nickname', enterkeyhint: 'done' }),
+  h('button', { class: 'btn primary', type: 'submit' }, 'Rename'));
+}
+
+function colorPicker(s) {
+  const owners = new Map(s.players.filter((p) => p.id !== s.me.id).map((p) => [p.color, p.name]));
+  return h('div', null,
+    h('div', { class: 'kicker' }, 'Color'),
+    h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Goose color' }, s.colors.map((c) => {
+      const owner = owners.get(c);
+      const mine = c === s.me.color;
+      return h('button', {
+        class: `swatch${mine ? ' selected' : ''}`,
+        style: { '--c': c },
+        role: 'radio',
+        'aria-checked': mine ? 'true' : 'false',
+        'aria-label': owner ? `Color taken by ${owner}` : mine ? 'Your color' : 'Pick this color',
+        title: owner ? `Taken by ${owner}` : '',
+        disabled: Boolean(owner),
+        onclick: async () => { if (mine) return; try { await act('setColor', { color: c }); } catch (err) { toast(err.message); } },
+      }, owner ? h('span', { class: 'swatch-taken' }, owner.slice(0, 1).toUpperCase()) : null);
+    })));
 }
 
 function card(...kids) { return h('section', { class: 'card' }, ...kids); }

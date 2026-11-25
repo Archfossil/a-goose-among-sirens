@@ -409,3 +409,29 @@ test('venue setting: same room by default, remote on request, validated', () => 
   const back = Room.fromJSON(JSON.parse(JSON.stringify(room)), { clock: fakeClock() });
   assert.equal(back.settings.venue, 'remote', 'survives a restart');
 });
+
+test('players can rename and recolor their goose before the game starts', () => {
+  const { room } = room3('loose');
+  assert.equal(room.rename('p0', '  Annabelle  '), 'Annabelle');
+  assert.equal(room.view(null).players[0].name, 'Annabelle');
+  assert.equal(room.rename('p0', 'annabelle'), 'annabelle', 'your own name in a new case is fine');
+  assert.throws(() => room.rename('p0', 'BO'), /already took/);
+  assert.throws(() => room.rename('p0', '   '), /name/);
+
+  const colors = room.view('p0').colors;
+  const free = colors.find((c) => !room.players.some((p) => p.color === c));
+  room.setColor('p0', free);
+  assert.equal(room.view('p1').players[0].color, free);
+  assert.throws(() => room.setColor('p1', free), /already has that color/);
+  assert.throws(() => room.setColor('p0', 'red; background:url(x)'), /Unknown color/);
+
+  room.start();
+  assert.throws(() => room.rename('p0', 'Mid Game'), /before the next game/);
+  assert.throws(() => room.setColor('p0', colors[11]), /before the next game/);
+  room.backToLobby();
+  room.rename('p0', 'Ann Again');
+
+  room.start();
+  room.join('aud', 'Audrey');
+  assert.throws(() => room.setColor('aud', colors[11]), /when you join the next game/);
+});
