@@ -94,6 +94,64 @@ const SECRET = [
   'Cozy', 'Paranoia', 'Giddy', 'Betrayal', 'Freedom', 'Embarrassment', 'Lust for Power',
 ];
 
+// "Flock Mind" — everyone tries to pick the SAME song as the rest of the flock.
+const MIND = [
+  'A song everyone at a wedding knows the words to',
+  'The first song that comes to mind when you hear “summer”',
+  'A song that was everywhere when you were in high school',
+  'The ultimate karaoke song',
+  'A song everyone knows from a movie',
+  'The most famous song by a boy band',
+  'A song you’d hear at every baseball game',
+  'The ultimate road trip singalong',
+  'A song that’s basically a meme',
+  'The most famous Christmas song',
+  'A song that gets played at every gym',
+  'The ultimate breakup song',
+  'A song everyone knows the dance to',
+  'The ultimate one-hit wonder',
+  'A song that plays at the end of every party',
+  'The most famous song from a Disney movie',
+  'A song that makes everyone scream the chorus',
+  'The ultimate 80s song',
+  'The ultimate 90s song',
+  'A song from a video game everyone knows',
+  'The ultimate sad song',
+  'A song that everyone’s parents love',
+  'The most famous song by a solo female artist',
+  'A song that every cover band plays',
+  'The song you’d play to prove you have good taste',
+  'A song about a city',
+  'A song with a color in the title',
+  'A song that plays at every sports stadium',
+  'The ultimate slow-dance song',
+  'A song that’s impossible not to sing along to',
+];
+
+// "Honk Take" — the picker plays a song for one of these, and everyone guesses how much the picker loves it.
+const HOT = [
+  'A guilty pleasure you’ll defend to the death',
+  'A song everyone loves that you think is overrated',
+  'A song you played on repeat for a whole month',
+  'A cover that’s better than the original',
+  'A song you used to hate but now secretly love',
+  'The last song you listened to',
+  'A song your parents played way too much',
+  'A song you’d put on your funeral playlist',
+  'A song you know every word to, embarrassingly',
+  'A song that reminds you of an ex',
+  'A song you’d skip immediately on shuffle',
+  'A song that was your ringtone at some point',
+  'The song you think is the most perfect ever written',
+  'A song that was a big deal in your hometown',
+  'A song you discovered through a movie or show',
+  'A song you’d use to wake up your worst enemy',
+  'A song from your “phase” (we all had one)',
+  'The song you’d pick for your walk-out music',
+  'A song you think the whole room has never heard',
+  'A song you’d play for an alien to explain humanity',
+];
+
 // Family mode leaves these out (crude, gory or heavy). Everything else stays in.
 const ADULT = new Set([
   'King Goose learns the untold history of half a century of colonial atrocities.',
@@ -200,4 +258,4 @@ const PACKS = {
   },
 };
 
-module.exports = { LOOSE, KING, SECRET, ADULT, PACKS };
+module.exports = { LOOSE, KING, SECRET, MIND, HOT, ADULT, PACKS };

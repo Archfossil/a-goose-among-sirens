@@ -56,35 +56,125 @@ class Sfx {
     osc.stop(t0 + dur + 0.05);
   }
 
-  /** A (very) goose-like honk: buzzy detuned saws, falling pitch, nasal band-pass. */
+  /**
+   * A goose honk: a breathy "h", then a nasal, raspy "ONK" whose pitch jumps up and sags.
+   * Buzzy oscillators -> fast amplitude flutter (the rasp) -> soft clipping (grit) -> formant
+   * filters (the nasal "aw"). Each honk is slightly different so a flurry doesn't sound robotic.
+   */
   honk(times = 1) {
     const ctx = this.ready();
     if (!ctx) return;
     const now = performance.now();
     if (now - this.lastHonk < 250) return;
     this.lastHonk = now;
+    let t = ctx.currentTime + 0.01;
     for (let i = 0; i < times; i++) {
-      const t0 = ctx.currentTime + i * 0.22;
-      const bp = ctx.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.value = 1100;
-      bp.Q.value = 2.5;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(0.9, t0 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.17);
-      bp.connect(g).connect(this.master);
-      for (const detune of [-14, 9]) {
-        const o = ctx.createOscillator();
-        o.type = 'sawtooth';
-        o.detune.value = detune;
-        o.frequency.setValueAtTime(470, t0);
-        o.frequency.exponentialRampToValueAtTime(320, t0 + 0.16);
-        o.connect(bp);
-        o.start(t0);
-        o.stop(t0 + 0.2);
-      }
+      const vary = 0.92 + Math.random() * 0.16;
+      const len = 0.22 + Math.random() * 0.08;
+      this.honkOnce(t, vary, len);
+      t += len + 0.09 + Math.random() * 0.05;
     }
+  }
+
+  honkOnce(t0, vary, len) {
+    const ctx = this.ctx;
+    const end = t0 + len;
+
+    // Voice chain: grit -> highpass -> two nasal formants -> lowpass -> envelope.
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = this.gritCurve();
+    shaper.oversample = '2x';
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 280;
+    const f1 = ctx.createBiquadFilter();
+    f1.type = 'peaking';
+    f1.frequency.value = 1050 * vary;
+    f1.Q.value = 2.6;
+    f1.gain.value = 13;
+    const f2 = ctx.createBiquadFilter();
+    f2.type = 'peaking';
+    f2.frequency.value = 2500 * vary;
+    f2.Q.value = 3.5;
+    f2.gain.value = 9;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 4200;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t0);
+    env.gain.exponentialRampToValueAtTime(0.55, t0 + 0.018);
+    env.gain.setValueAtTime(0.55, t0 + 0.05);
+    env.gain.exponentialRampToValueAtTime(0.42, end - 0.07);
+    env.gain.exponentialRampToValueAtTime(0.0001, end);
+    shaper.connect(hp).connect(f1).connect(f2).connect(lp).connect(env).connect(this.master);
+
+    // The rasp: the voice flutters ~70 times a second.
+    const flutter = ctx.createGain();
+    flutter.gain.value = 0.65;
+    const lfo = ctx.createOscillator();
+    lfo.type = 'triangle';
+    lfo.frequency.value = 62 + Math.random() * 18;
+    const lfoDepth = ctx.createGain();
+    lfoDepth.gain.value = 0.35;
+    lfo.connect(lfoDepth).connect(flutter.gain);
+    flutter.connect(shaper);
+
+    // The voice: buzzy, slightly detuned, pitch "hONK" — up fast, then a sag.
+    const base = 390 * vary;
+    const voices = [['sawtooth', -9, 0.55], ['sawtooth', 11, 0.55], ['square', 0, 0.3]];
+    for (const [type, detune, level] of voices) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.detune.value = detune;
+      o.frequency.setValueAtTime(base * 0.8, t0);
+      o.frequency.exponentialRampToValueAtTime(base * 1.28, t0 + 0.045);
+      o.frequency.exponentialRampToValueAtTime(base * 1.08, t0 + len * 0.6);
+      o.frequency.exponentialRampToValueAtTime(base * 0.86, end);
+      const g = ctx.createGain();
+      g.gain.value = level;
+      o.connect(g).connect(flutter);
+      o.start(t0);
+      o.stop(end + 0.02);
+    }
+    lfo.start(t0);
+    lfo.stop(end + 0.02);
+
+    // The breathy "h" at the start.
+    const noise = ctx.createBufferSource();
+    noise.buffer = this.noiseBuffer();
+    const nf = ctx.createBiquadFilter();
+    nf.type = 'bandpass';
+    nf.frequency.value = 1900;
+    nf.Q.value = 0.9;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t0);
+    ng.gain.exponentialRampToValueAtTime(0.35, t0 + 0.01);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.07);
+    noise.connect(nf).connect(ng).connect(this.master);
+    noise.start(t0);
+    noise.stop(t0 + 0.08);
+  }
+
+  noiseBuffer() {
+    if (this.noise) return this.noise;
+    const ctx = this.ctx;
+    const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.1), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    this.noise = buf;
+    return buf;
+  }
+
+  gritCurve() {
+    if (this.grit) return this.grit;
+    const n = 1024;
+    const curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 2 - 1;
+      curve[i] = Math.tanh(2.4 * x) / Math.tanh(2.4);
+    }
+    this.grit = curve;
+    return curve;
   }
 
   /** Bright little arpeggio for reveals. */

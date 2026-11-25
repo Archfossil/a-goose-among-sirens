@@ -5,11 +5,13 @@
 // where the host is (server start time + elapsed), so everyone hears the same moment.
 // Spotify works the same way through its iFrame API (one persistent embed, loadUri + play).
 // Some browsers (Safari especially) still block that without a tap, so a tap button is offered.
+// Players can also turn auto-play off: each song then waits for a tap (and still joins in sync).
 
 import { h, store, searchUrls, serverNow } from './common.js';
 
 const MUTE_KEY = 'goose.deviceMuted';
-const GAME_PHASES = new Set(['submit', 'listen', 'reveal', 'judge', 'defend', 'vote']);
+const AUTO_KEY = 'goose.autoplay';
+const GAME_PHASES = new Set(['submit', 'listen', 'reveal', 'judge', 'defend', 'vote', 'write', 'rate']);
 
 let dock = null;
 let ui = null;               // persistent child elements
@@ -21,6 +23,7 @@ let checkTimer = null;
 let lastNp = null;
 let active = false;
 let muted = store.get(MUTE_KEY) === true;
+let autoplay = store.get(AUTO_KEY) !== false;
 let otherKey = null;
 let sp = null;               // Spotify EmbedController
 let spReady = null;          // Promise<EmbedController>
@@ -69,10 +72,22 @@ function renderHead(state) {
     h('div', null,
       h('div', { class: 'kicker' }, '\u{1F3A7} Playing on your device'),
       h('div', { class: 'ld-title' }, lastNp ? lastNp.song.display : (state.phase === 'lobby' ? 'Everyone-remote game' : 'Waiting for the next song…'))),
-    h('button', {
-      class: 'btn small ghost', 'aria-pressed': muted ? 'true' : 'false',
-      onclick: () => { muted = !muted; store.set(MUTE_KEY, muted); applyMute(); renderHead(state); },
-    }, muted ? '\u{1F507} Unmute' : '\u{1F50A} Mute'));
+    h('div', { class: 'ld-buttons' },
+      h('button', {
+        class: `btn small ${autoplay ? 'ghost' : 'primary'}`, 'aria-pressed': autoplay ? 'true' : 'false',
+        title: autoplay ? 'Songs start by themselves. Tap to make each song wait for you.' : 'Each song waits for a tap. Tap to let songs start by themselves.',
+        onclick: () => { autoplay = !autoplay; store.set(AUTO_KEY, autoplay); onAutoplayChange(); renderHead(state); },
+      }, autoplay ? '\u23EF Auto-play: On' : '\u23F8 Auto-play: Off'),
+      h('button', {
+        class: 'btn small ghost', 'aria-pressed': muted ? 'true' : 'false',
+        onclick: () => { muted = !muted; store.set(MUTE_KEY, muted); applyMute(); renderHead(state); },
+      }, muted ? '\u{1F507} Unmute' : '\u{1F50A} Mute')));
+}
+
+/** Auto-play was switched: start a waiting song now, or just let the next song wait. */
+function onAutoplayChange() {
+  if (!autoplay || !active || !lastNp || muted) return;
+  if (!ui.tap.hidden) tapToPlay(); // runs inside the toggle tap, so sound is allowed
 }
 
 function renderIdle(text) {
@@ -99,9 +114,14 @@ function sync() {
     ui.other.replaceChildren();
     otherKey = null;
     ui.video.hidden = false;
-    ui.note.textContent = 'Synced with the host. Use your device’s volume buttons.';
+    ui.note.textContent = autoplay ? 'Synced with the host. Use your device’s volume buttons.' : 'Auto-play is off. Tap play to jump in, synced with the host.';
     loadYouTube().then((player) => {
       if (playingKey !== key) return;
+      if (!autoplay) {
+        player.cueVideoById({ videoId: np.song.id, startSeconds: position(np) });
+        showTap('\u25B6 Play this song');
+        return;
+      }
       player.loadVideoById({ videoId: np.song.id, startSeconds: position(np) });
       applyMute();
       // Browsers (iPhones especially) may refuse to start sound on their own: offer a tap.
@@ -121,7 +141,9 @@ function sync() {
     ui.other.replaceChildren();
     otherKey = null;
     ui.spotify.hidden = false;
-    ui.note.textContent = 'Synced with the host. (30-second preview unless you’re logged in to Spotify.)';
+    ui.note.textContent = autoplay
+      ? 'Synced with the host. (30-second preview unless you’re logged in to Spotify.)'
+      : 'Auto-play is off. Tap play to jump in. (30-second preview unless you’re logged in to Spotify.)';
     playSpotify(np, key);
     return;
   }
@@ -146,16 +168,18 @@ function spotifyUri(song) {
 function playSpotify(np, key) {
   loadSpotify(spotifyUri(np.song), key).then((ctrl) => {
     if (playingKey !== key) return;
-    spWantKey = muted ? null : key;
+    const auto = autoplay && !muted;
+    spWantKey = auto ? key : null;
     if (spLoadedKey !== key) {
       spLoadedKey = key;
       spPlaying = false;
       // Playback starts on the 'ready' event that follows the load.
       ctrl.loadUri(spotifyUri(np.song), false, Math.floor(position(np)));
-    } else if (!muted) {
+    } else if (auto) {
       startSpotify();
     }
     clearTimeout(checkTimer);
+    if (!autoplay) { showTap('\u25B6 Play this song'); return; }
     checkTimer = setTimeout(() => {
       if (playingKey === key && !spPlaying && !muted) showTap('▶ Tap to play the music');
     }, 3500);

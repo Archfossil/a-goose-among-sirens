@@ -143,8 +143,20 @@ const FEATHER_FILL = {
   brown: ['#c08a5b', '#8a5f3a', INK],
   black: ['#3d3b47', '#67657a', '#fbf8f1'],
   gold: ['#f6c94e', '#c8962a', INK],
+  pink: ['#ffb3cf', '#e07aa2', INK],
+  red: ['#e8615a', '#b03b36', INK],
+  orange: ['#ffa24c', '#cc7224', INK],
+  mint: ['#9ee6c4', '#5fb592', INK],
+  blue: ['#8ec5ff', '#5a92d4', INK],
+  purple: ['#b79cf0', '#8668c9', INK],
+  navy: ['#34417a', '#5b6aa8', '#fbf8f1'],
 };
-export const FEATHER_LABELS = { white: 'White', grey: 'Grey', brown: 'Brown', black: 'Black', gold: 'Golden' };
+export const FEATHER_LABELS = {
+  white: 'White', grey: 'Grey', brown: 'Brown', black: 'Black', gold: 'Golden',
+  pink: 'Pink', red: 'Red', orange: 'Orange', mint: 'Mint', blue: 'Sky blue', purple: 'Lavender', navy: 'Midnight',
+};
+// Feathers dark enough to need light details (eye, swatch checkmark).
+export const DARK_FEATHERS = new Set(['black', 'navy']);
 export const FEATHER_SWATCH = Object.fromEntries(Object.entries(FEATHER_FILL).map(([k, v]) => [k, v[0]]));
 
 // Expressions, drawn around the eye (48.6, 11.6). "E" is replaced with the eye color.
@@ -252,9 +264,11 @@ export function gooseIcon(cls = '') {
   return span;
 }
 
+const MODE_GLYPHS = { king: '\u{1F451}', secret: '\u{1F92B}', fight: '\u{1F94A}', fake: '\u{1F3AD}', mind: '\u{1F9E0}', chain: '\u{1F517}', hot: '\u{1F336}\uFE0F' };
+
 export function modeIcon(key, cls = '') {
   if (key === 'loose') return gooseIcon(cls);
-  return h('span', { class: `mode-glyph ${cls}`.trim(), 'aria-hidden': 'true' }, key === 'king' ? '\u{1F451}' : '\u{1F92B}');
+  return h('span', { class: `mode-glyph ${cls}`.trim(), 'aria-hidden': 'true' }, MODE_GLYPHS[key] || '\u{1F3B5}');
 }
 
 // ---------- re-rendering without losing what people are typing ----------
@@ -355,6 +369,15 @@ export function youtubePlaylistUrl(playlist) {
   const ids = [...new Set(playlist.filter((t) => t.song.kind === 'youtube').map((t) => t.song.id))].slice(0, 50);
   return ids.length ? `https://www.youtube.com/watch_videos?video_ids=${ids.join(',')}` : null;
 }
+
+// Honk Take's 1–5 scale.
+export const RATINGS = [
+  { v: 1, emoji: '\u{1F92E}', label: 'Hate it' },
+  { v: 2, emoji: '\u{1F62C}', label: 'Not for me' },
+  { v: 3, emoji: '\u{1F610}', label: 'It’s fine' },
+  { v: 4, emoji: '\u{1F642}', label: 'Like it' },
+  { v: 5, emoji: '\u{1F60D}', label: 'Love it' },
+];
 
 export const REACTIONS = [
   { kind: 'fire', glyph: '\u{1F525}', label: 'Fire' },

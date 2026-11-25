@@ -1,5 +1,5 @@
 'use strict';
-// Server-authoritative game logic for all three modes in the design doc.
+// Server-authoritative game logic for every mode (the three from the design doc, plus five newer ones).
 // A Room is a pure state machine: no networking, so it is easy to test.
 
 const PROMPTS = require('./prompts');
@@ -16,9 +16,9 @@ const COLORS = [
 ];
 
 // Optional countdowns (seconds). Submit time scales with how many songs a player owes.
-const TIMERS = { perSong: 75, guess: 30, judge: 45, vote: 40 };
+const TIMERS = { perSong: 75, guess: 30, judge: 45, vote: 40, write: 60, rate: 30 };
 const REACTIONS = ['fire', 'laugh', 'cry', 'mindblown', 'skull', 'heart', 'honk'];
-const REACT_PHASES = ['listen', 'reveal', 'judge', 'defend', 'vote'];
+const REACT_PHASES = ['listen', 'reveal', 'judge', 'defend', 'vote', 'write', 'rate'];
 const MAX_CUSTOM = 60;
 const MAX_AUDIENCE = 50;
 const AUDIENCE_COLOR = '#d7c9e6';
@@ -29,7 +29,7 @@ const HATS = ['none', 'crown', 'tophat', 'party', 'beanie', 'flower', 'headphone
   'pirate', 'wizard', 'viking', 'chef', 'halo', 'bucket', 'propeller'];
 // Worn together with a hat. (Shades and the bow tie used to be hats; old saves are migrated.)
 const ACCESSORIES = ['none', 'shades', 'heartshades', 'monocle', 'bowtie', 'scarf', 'chain'];
-const FEATHERS = ['white', 'grey', 'brown', 'black', 'gold'];
+const FEATHERS = ['white', 'grey', 'brown', 'black', 'gold', 'pink', 'red', 'orange', 'mint', 'blue', 'purple', 'navy'];
 const FACES = ['normal', 'happy', 'angry', 'sleepy', 'starry'];
 const LOOK_DEFAULTS = { accessory: 'none', feathers: 'white', face: 'normal' };
 const LOOK_OPTIONS = { accessory: ACCESSORIES, feathers: FEATHERS, face: FACES };
@@ -70,7 +70,50 @@ const MODES = {
     short: 'Sniff out the bluffer',
     rules: 'Everyone gets the same one-word feeling except the Secret Goose, who picks a song blind. After the songs play, the feeling and the pickers are revealed. Everyone defends their pick, then votes for the Goose. +1 for catching them, and +2 to the Goose if they escape.',
   },
+  fight: {
+    key: 'fight',
+    name: 'Goose Fight',
+    short: 'Song battles, last song standing',
+    minPlayers: 3,
+    rules: 'Everyone answers the same prompt. The songs face off two at a time in a bracket and the room votes for the winner of each fight (you can’t vote in your own). +1 for every fight your song wins, and +2 more for the last song standing.',
+  },
+  fake: {
+    key: 'fake',
+    name: 'Fake Prompt',
+    short: 'Bluff the prompt behind the song',
+    minPlayers: 3,
+    rules: 'Everyone answers secret prompts with songs. When a song plays, everyone else writes a fake prompt it could have answered. Then find the real prompt among the fakes. +2 for finding it, +1 every time someone falls for your fake.',
+  },
+  mind: {
+    key: 'mind',
+    name: 'Flock Mind',
+    short: 'Think like the flock',
+    minPlayers: 3,
+    rules: 'Everyone gets the same prompt and tries to pick the song the rest of the flock will pick. Picks that share a song or an artist match up. +1 for every other player who matched you.',
+  },
+  chain: {
+    key: 'chain',
+    name: 'Goose Chain',
+    short: 'Link song to song',
+    minPlayers: 3,
+    rules: 'Take turns adding a song to one long chain. Each song must link to the one before it (a shared word, artist, decade, vibe… explain it out loud!). Everyone else votes if the link holds. +1 for a good link, but break the chain and you lose a point and the next goose starts fresh.',
+  },
+  hot: {
+    key: 'hot',
+    name: 'Honk Take',
+    short: 'How much do they really love it?',
+    minPlayers: 2,
+    rules: 'Take turns as the DJ. The DJ plays a song for a prompt and secretly rates it from 1 (hate it) to 5 (love it). Everyone else guesses the DJ’s rating. +2 for an exact guess, +1 for one off, and the DJ gets +1 for every exact guess.',
+  },
 };
+
+// Which prompt list (and custom-prompt bucket) each mode deals from. Goose Chain has no prompts.
+const PROMPT_KINDS = ['loose', 'king', 'secret', 'mind', 'hot'];
+const MODE_PROMPTS = { loose: 'loose', king: 'king', secret: 'secret', fight: 'loose', fake: 'loose', mind: 'mind', hot: 'hot', chain: null };
+const PROMPT_LIST = { loose: 'LOOSE', king: 'KING', secret: 'SECRET', mind: 'MIND', hot: 'HOT' };
+const MAX_FAKE = 120;
+
+for (const m of Object.values(MODES)) m.prompts = MODE_PROMPTS[m.key];
 
 function shuffle(list, rng) {
   const a = list.slice();
@@ -107,6 +150,49 @@ function clampInt(v, lo, hi, fallback) {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
 }
 
+/** Case/accent/punctuation-insensitive form of a phrase, for "is this the same text?" checks. */
+function looseKey(text) {
+  return String(text ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+const NOISE_WORDS = /\b(official|music|video|audio|lyrics?|hd|hq|4k|remaster(ed)?|topic|visuali[sz]er|version|live|explicit|clean|mv)\b/g;
+
+/** Song + artist names a pick is "about", plus its link id. Two picks match if they share any. */
+function songKeys(song) {
+  const keys = new Set();
+  if (song.kind !== 'text' && song.id) keys.add(`${song.kind}:${song.id}`);
+  const raw = [song.title, song.artist, song.kind === 'text' ? song.text : null].filter(Boolean);
+  for (const r of raw) {
+    const parts = String(r).replace(/\(.*?\)|\[.*?\]/g, ' ').split(/\s+[-–—|]\s+|\s+by\s+|\s*\/\s*/i);
+    for (const p of parts) {
+      const k = looseKey(p).replace(/\b(feat|ft|featuring)\b.*$/, '').replace(NOISE_WORDS, ' ')
+        .replace(/vevo$/, '').replace(/\s+/g, ' ').trim().replace(/^the /, '');
+      if (k.length >= 2) keys.add(`t:${k}`);
+    }
+  }
+  return keys;
+}
+
+/** Group entries whose picks share a song or artist (transitively). Biggest groups first. */
+function matchGroups(entries) {
+  const parent = entries.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const owner = new Map();
+  entries.forEach((e, i) => {
+    for (const k of songKeys(e.song)) {
+      if (owner.has(k)) parent[find(i)] = find(owner.get(k)); else owner.set(k, i);
+    }
+  });
+  const groups = new Map();
+  entries.forEach((e, i) => {
+    const root = find(i);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(e.id);
+  });
+  return [...groups.values()].sort((a, b) => b.length - a.length);
+}
+
 class Room {
   constructor(code, { rng = Math.random, clock = REAL_CLOCK } = {}) {
     this.code = code;
@@ -114,7 +200,10 @@ class Room {
     this.clock = clock;
     this.players = [];
     this.mode = 'loose';
-    this.settings = { promptsPerPlayer: 3, kingCycles: 1, secretRounds: 3, timers: false, family: false, venue: 'room' };
+    this.settings = {
+      promptsPerPlayer: 3, kingCycles: 1, secretRounds: 3, timers: false, family: false, venue: 'room',
+      fightRounds: 1, fakePrompts: 1, mindRounds: 5, chainLaps: 2, hotCycles: 1,
+    };
     this.phase = 'lobby';
     this.g = null;            // per-game state
     this.nowPlayingId = null; // entry the host screen should be playing
@@ -126,7 +215,7 @@ class Room {
     this.version = 0;
     this.gameNo = 0;
     this.history = [];        // every song played this game, for the end-of-game setlist
-    this.custom = { loose: [], king: [], secret: [] };
+    this.custom = { loose: [], king: [], secret: [], mind: [], hot: [] };
     this.audience = [];       // late joiners / overflow: they react now and play next game
     this.favorites = {};      // "Song of the Night" votes at game over: playerId -> entryId
     this.customCount = 0;
@@ -170,7 +259,7 @@ class Room {
   makeEntry(playerId, song, prompt) { return { id: `e${++this.entryCount}`, playerId, song, prompt }; }
   currentQueue() {
     if (!this.g) return [];
-    return this.mode === 'loose' ? this.g.queue : (this.g.cur ? this.g.cur.queue : []);
+    return ['loose', 'fake', 'chain'].includes(this.mode) ? this.g.queue : (this.g.cur ? this.g.cur.queue : []);
   }
   entryById(id) { return this.currentQueue().find((e) => e.id === id) || null; }
 
@@ -311,6 +400,11 @@ class Room {
     if (has(s, 'promptsPerPlayer')) this.settings.promptsPerPlayer = clampInt(s.promptsPerPlayer, 1, 3, 3);
     if (has(s, 'kingCycles')) this.settings.kingCycles = clampInt(s.kingCycles, 1, 3, 1);
     if (has(s, 'secretRounds')) this.settings.secretRounds = clampInt(s.secretRounds, 1, 12, 3);
+    if (has(s, 'fightRounds')) this.settings.fightRounds = clampInt(s.fightRounds, 1, 3, 1);
+    if (has(s, 'fakePrompts')) this.settings.fakePrompts = clampInt(s.fakePrompts, 1, 2, 1);
+    if (has(s, 'mindRounds')) this.settings.mindRounds = clampInt(s.mindRounds, 1, 12, 5);
+    if (has(s, 'chainLaps')) this.settings.chainLaps = clampInt(s.chainLaps, 1, 3, 2);
+    if (has(s, 'hotCycles')) this.settings.hotCycles = clampInt(s.hotCycles, 1, 3, 1);
     if (has(s, 'timers')) this.settings.timers = Boolean(s.timers);
     if (has(s, 'family')) this.settings.family = Boolean(s.family);
     // 'room': everyone hears the TV. 'remote': every player's own device plays the music.
@@ -330,11 +424,17 @@ class Room {
     this.fx = null;
     this.history = [];
     this.favorites = {};
-    this.stats = { correct: {}, fooled: {}, crowns: {}, escapes: {}, catches: {}, reactsSent: {}, reacts: {} };
+    this.stats = {
+      correct: {}, fooled: {}, crowns: {}, escapes: {}, catches: {}, reactsSent: {}, reacts: {},
+      fights: {}, forged: {}, matches: {}, links: {}, reads: {},
+    };
     this.gameNo++;
-    if (this.mode === 'loose') this.startLoose();
-    else if (this.mode === 'king') this.startKing();
-    else this.startSecret();
+    const starts = {
+      loose: () => this.startLoose(), king: () => this.startKing(), secret: () => this.startSecret(),
+      fight: () => this.startFight(), fake: () => this.startFake(), mind: () => this.startMind(),
+      chain: () => this.startChain(), hot: () => this.startHot(),
+    };
+    starts[this.mode]();
     this.touch();
   }
 
@@ -362,20 +462,32 @@ class Room {
   isDone(pid) {
     const g = this.g;
     if (!g) return false;
+    const cur = g.cur || {};
     if (this.phase === 'submit') {
-      if (this.mode === 'loose') return g.subs[pid].every(Boolean);
-      if (this.mode === 'king' && pid === g.cur.kingId) return true;
-      return Boolean(g.cur.subs[pid]);
+      if (this.mode === 'loose' || this.mode === 'fake') return g.subs[pid].every(Boolean);
+      if (this.mode === 'king' && pid === cur.kingId) return true;
+      if ((this.mode === 'chain' || this.mode === 'hot') && pid !== cur.pickerId) return true;
+      return Boolean(cur.subs[pid]);
     }
     if (this.phase === 'listen' && this.mode === 'loose') {
       return pid === g.queue[g.index].playerId || has(g.guesses, pid);
     }
-    if (this.phase === 'vote') return has(g.cur.votes, pid);
+    if (this.mode === 'fake' && (this.phase === 'write' || this.phase === 'vote')) {
+      if (pid === this.fakeEntry().playerId) return true;
+      return has(this.phase === 'write' ? cur.fakes : cur.votes, pid);
+    }
+    if (this.mode === 'fight' && this.phase === 'vote') {
+      if (cur.match.some((id) => this.entryById(id).playerId === pid)) return true;
+      return has(cur.votes, pid);
+    }
+    if (this.mode === 'chain' && this.phase === 'vote') return pid === cur.pickerId || has(cur.votes, pid);
+    if (this.mode === 'hot' && this.phase === 'rate') return has(cur.ratings, pid);
+    if (this.phase === 'vote') return has(cur.votes, pid);
     return false;
   }
 
   tracksReadiness() {
-    return this.phase === 'submit' || this.phase === 'vote' || (this.phase === 'listen' && this.mode === 'loose');
+    return ['submit', 'vote', 'write', 'rate'].includes(this.phase) || (this.phase === 'listen' && this.mode === 'loose');
   }
 
   allDone() { return this.players.every((p) => this.isDone(p.id)); }
@@ -386,7 +498,7 @@ class Room {
     if (this.phase !== 'submit') throw new GameError('Song picks are closed right now');
     const g = this.g;
     let song;
-    if (this.mode === 'loose') {
+    if (this.mode === 'loose' || this.mode === 'fake') {
       const arr = g.subs[pid];
       const i = Number(slot);
       if (!Number.isInteger(i) || i < 0 || i >= arr.length) throw new GameError('Unknown prompt');
@@ -394,6 +506,7 @@ class Room {
       arr[i] = song;
     } else {
       if (this.mode === 'king' && pid === g.cur.kingId) throw new GameError('The King doesn’t pick this round. Sit back and judge!');
+      if ((this.mode === 'chain' || this.mode === 'hot') && pid !== g.cur.pickerId) throw new GameError('It’s not your turn to pick');
       song = parseSong(input);
       g.cur.subs[pid] = song;
     }
@@ -404,7 +517,11 @@ class Room {
 
   closeSubmissions() {
     const g = this.g;
-    if (this.mode === 'loose') {
+    if (this.mode === 'fight') return this.closeFight();
+    if (this.mode === 'mind') return this.closeMind();
+    if (this.mode === 'chain') return this.closeChain();
+    if (this.mode === 'hot') return this.closeHot();
+    if (this.mode === 'loose' || this.mode === 'fake') {
       const entries = [];
       for (const p of this.players) {
         g.subs[p.id].forEach((song, i) => { if (song) entries.push(this.makeEntry(p.id, song, g.assignments[p.id][i])); });
@@ -413,7 +530,7 @@ class Room {
       g.queue = spreadOwners(entries, this.rng);
       this.recordHistory(g.queue);
       g.index = 0;
-      return this.beginLooseSong();
+      return this.mode === 'fake' ? this.beginFakeSong() : this.beginLooseSong();
     }
     const cur = g.cur;
     const entries = this.players.filter((p) => cur.subs[p.id]).map((p) => this.makeEntry(p.id, cur.subs[p.id], cur.prompt));
@@ -431,7 +548,12 @@ class Room {
     const g = this.g;
     if (this.phase === 'submit') {
       this.closeSubmissions();
-    } else if (this.mode === 'loose') {
+    } else if (this.mode === 'fight') this.nextFight();
+    else if (this.mode === 'fake') this.nextFake();
+    else if (this.mode === 'mind') this.nextMindRound();
+    else if (this.mode === 'chain') this.nextChain();
+    else if (this.mode === 'hot') this.nextHot();
+    else if (this.mode === 'loose') {
       if (this.phase === 'listen') this.revealLoose();
       else if (this.phase === 'reveal') {
         g.index++;
@@ -460,11 +582,11 @@ class Room {
 
   /** Host replays a specific song (e.g. while the King deliberates). */
   play(entryId) {
-    if (!['listen', 'reveal', 'judge', 'defend', 'vote'].includes(this.phase)) throw new GameError('Nothing to play right now');
+    if (!['listen', 'reveal', 'judge', 'defend', 'vote', 'write', 'rate'].includes(this.phase)) throw new GameError('Nothing to play right now');
     const entry = this.entryById(entryId);
     if (!entry) throw new GameError('Unknown song');
     // During anonymous listening, only allow songs that have already been heard.
-    if (this.phase === 'listen' && this.mode !== 'loose') {
+    if (this.phase === 'listen' && ['king', 'secret'].includes(this.mode)) {
       const idx = this.g.cur.queue.indexOf(entry);
       if (idx > this.g.cur.index) throw new GameError('That song hasn’t come up yet');
     }
@@ -617,7 +739,11 @@ class Room {
 
   vote(pid, target) {
     this.mustPlayer(pid);
-    if (this.mode !== 'secret' || this.phase !== 'vote') throw new GameError('No voting right now');
+    if (this.phase !== 'vote') throw new GameError('No voting right now');
+    if (this.mode === 'fight') return this.voteFight(pid, target);
+    if (this.mode === 'fake') return this.voteFake(pid, target);
+    if (this.mode === 'chain') return this.voteChain(pid, target);
+    if (this.mode !== 'secret') throw new GameError('No voting right now');
     if (target === pid || !this.getPlayer(target)) throw new GameError('Vote for one of the other players');
     this.g.cur.votes[pid] = target;
     if (this.allDone()) this.revealSecret();
@@ -637,13 +763,395 @@ class Room {
     this.emitFx(caught ? 'caught' : 'escaped');
   }
 
+  /** Turn order for the "take turns" modes: everyone once per lap, no one twice in a row. */
+  turnOrder(laps) {
+    const ids = this.players.map((p) => p.id);
+    const order = [];
+    for (let c = 0; c < laps; c++) {
+      const s = shuffle(ids, this.rng);
+      if (order.length && s[0] === order[order.length - 1]) s.push(s.shift());
+      order.push(...s);
+    }
+    return order;
+  }
+
+  /** Move to the next turn whose player is still here; false when the order is used up. */
+  advanceTurn() {
+    const g = this.g;
+    g.round++;
+    while (g.round < g.order.length && !this.getPlayer(g.order[g.round])) g.round++;
+    return g.round < g.order.length;
+  }
+
+  // ---------- Goose Fight ----------
+  startFight() {
+    this.g = { round: -1, rounds: this.settings.fightRounds, deck: [], cur: null };
+    this.nextFightRound();
+  }
+
+  nextFightRound() {
+    const g = this.g;
+    g.round++;
+    if (g.round >= g.rounds) return this.endGame();
+    g.cur = {
+      prompt: this.drawPrompt(PROMPTS.LOOSE, 'loose'), subs: {}, queue: [],
+      alive: [], winners: [], bye: null, stage: 0, stageSize: 0, match: null, matchNo: 0, playIdx: 0, votes: {}, result: null,
+    };
+    this.phase = 'submit';
+    this.nowPlayingId = null;
+  }
+
+  closeFight() {
+    const cur = this.g.cur;
+    const entries = this.players.filter((p) => cur.subs[p.id]).map((p) => this.makeEntry(p.id, cur.subs[p.id], cur.prompt));
+    if (!entries.length) return this.nextFightRound();
+    cur.queue = shuffle(entries, this.rng);
+    this.recordHistory(cur.queue);
+    cur.alive = cur.queue.map((e) => e.id);
+    return this.beginFightStage();
+  }
+
+  /** A new bracket round from the songs still alive. An odd song out gets a bye. */
+  beginFightStage() {
+    const cur = this.g.cur;
+    cur.stage++;
+    cur.winners = [];
+    cur.bye = null;
+    cur.stageSize = cur.alive.length;
+    if (cur.alive.length > 1 && cur.alive.length % 2 === 1) {
+      cur.bye = cur.alive.pop();
+      cur.winners.push(cur.bye);
+    }
+    return this.beginFightMatch();
+  }
+
+  beginFightMatch() {
+    const cur = this.g.cur;
+    cur.votes = {};
+    cur.result = null;
+    if (cur.alive.length < 2) {
+      // Only one song in the whole fight: it wins by walkover.
+      const id = cur.alive.shift();
+      cur.match = null;
+      this.addPoints(this.entryById(id).playerId, 2);
+      cur.result = { winner: id, loser: null, tally: {}, tie: false, champion: id, walkover: true };
+      this.phase = 'reveal';
+      this.nowPlayingId = id;
+      this.emitFx('crown');
+      return;
+    }
+    cur.match = [cur.alive.shift(), cur.alive.shift()];
+    cur.matchNo++;
+    cur.playIdx = 0;
+    this.phase = 'listen';
+    this.nowPlayingId = cur.match[0];
+  }
+
+  voteFight(pid, target) {
+    const cur = this.g.cur;
+    if (!cur.match.includes(target)) throw new GameError('Pick one of the two songs');
+    if (cur.match.some((id) => this.entryById(id).playerId === pid)) throw new GameError('Your song is in this fight! Sit this vote out.');
+    cur.votes[pid] = target;
+    if (this.allDone()) this.revealFight();
+    this.touch();
+  }
+
+  revealFight() {
+    const cur = this.g.cur;
+    const [a, b] = cur.match;
+    const tally = { [a]: 0, [b]: 0 };
+    for (const t of Object.values(cur.votes)) if (has(tally, t)) tally[t]++;
+    const tie = tally[a] === tally[b];
+    const winner = tie ? (this.rng() < 0.5 ? a : b) : (tally[a] > tally[b] ? a : b);
+    const owner = this.entryById(winner).playerId;
+    this.addPoints(owner, 1);
+    this.bump('fights', [owner]);
+    cur.winners.push(winner);
+    const champion = cur.alive.length === 0 && cur.winners.length === 1;
+    if (champion) this.addPoints(owner, 2);
+    cur.result = { winner, loser: winner === a ? b : a, tally, tie, champion: champion ? winner : null, walkover: false };
+    this.phase = 'reveal';
+    this.nowPlayingId = winner; // victory lap
+    this.emitFx(champion ? 'crown' : 'reveal');
+  }
+
+  nextFight() {
+    const cur = this.g.cur;
+    if (this.phase === 'listen') {
+      if (cur.playIdx === 0) { cur.playIdx = 1; this.nowPlayingId = cur.match[1]; } else this.phase = 'vote';
+    } else if (this.phase === 'vote') this.revealFight();
+    else if (this.phase === 'reveal') {
+      if (cur.result.champion) return this.nextFightRound();
+      if (cur.alive.length >= 2) return this.beginFightMatch();
+      cur.alive = [...cur.winners, ...cur.alive];
+      return this.beginFightStage();
+    }
+  }
+
+  // ---------- Fake Prompt ----------
+  startFake() {
+    const n = this.settings.fakePrompts;
+    let deck = this.deckFor(PROMPTS.LOOSE, 'loose');
+    const assignments = {};
+    const subs = {};
+    for (const p of this.players) {
+      assignments[p.id] = [];
+      for (let i = 0; i < n; i++) {
+        if (!deck.length) deck = this.deckFor(PROMPTS.LOOSE, 'loose');
+        assignments[p.id].push(deck.pop());
+      }
+      subs[p.id] = new Array(n).fill(null);
+    }
+    this.g = { assignments, subs, deck, queue: [], index: 0, cur: null };
+    this.phase = 'submit';
+  }
+
+  fakeEntry() { return this.g.queue.find((e) => e.id === this.g.cur.entryId); }
+
+  beginFakeSong() {
+    const g = this.g;
+    const entry = g.queue[g.index];
+    g.cur = { entryId: entry.id, fakes: {}, choices: null, votes: {}, result: null };
+    this.phase = 'write';
+    this.nowPlayingId = entry.id;
+  }
+
+  writeFake(pid, raw) {
+    this.mustPlayer(pid);
+    if (this.mode !== 'fake' || this.phase !== 'write') throw new GameError('No fake prompts right now');
+    const entry = this.fakeEntry();
+    if (pid === entry.playerId) throw new GameError('That’s your song. Just look innocent!');
+    const text = String(raw ?? '').trim().replace(/\s+/g, ' ');
+    if (text.length < 4) throw new GameError('Write a little more');
+    if (text.length > MAX_FAKE) throw new GameError(`Keep it under ${MAX_FAKE} characters`);
+    if (looseKey(text) === looseKey(entry.prompt)) throw new GameError('Whoa, that’s basically the real prompt! Write a different one.');
+    this.g.cur.fakes[pid] = text;
+    if (this.allDone()) this.openFakeVote();
+    this.touch();
+  }
+
+  openFakeVote() {
+    const cur = this.g.cur;
+    const entry = this.fakeEntry();
+    const byKey = new Map();
+    const add = (text, author) => {
+      const k = looseKey(text);
+      if (!byKey.has(k)) byKey.set(k, { text, authors: [], real: false });
+      const c = byKey.get(k);
+      if (author) c.authors.push(author); else c.real = true;
+    };
+    add(entry.prompt, null);
+    for (const [pid, t] of Object.entries(cur.fakes)) add(t, pid);
+    cur.choices = shuffle([...byKey.values()], this.rng).map((c, i) => ({ id: `f${i}`, ...c }));
+    if (cur.choices.length < 2) return this.revealFake(); // nobody wrote a fake
+    this.phase = 'vote';
+  }
+
+  voteFake(pid, choiceId) {
+    const cur = this.g.cur;
+    if (pid === this.fakeEntry().playerId) throw new GameError('You know the real one. No voting!');
+    const choice = cur.choices.find((c) => c.id === choiceId);
+    if (!choice) throw new GameError('Pick one of the prompts');
+    if (choice.authors.includes(pid)) throw new GameError('That’s your own fake!');
+    cur.votes[pid] = choiceId;
+    if (this.allDone()) this.revealFake();
+    this.touch();
+  }
+
+  revealFake() {
+    const cur = this.g.cur;
+    const found = [];
+    for (const [pid, id] of Object.entries(cur.votes)) {
+      const c = cur.choices.find((x) => x.id === id);
+      if (!c) continue;
+      if (c.real) { found.push(pid); this.addPoints(pid, 2); } else {
+        for (const a of c.authors) { this.addPoints(a, 1); this.bump('forged', [a]); }
+      }
+    }
+    this.bump('correct', found);
+    cur.result = { found, realId: (cur.choices.find((c) => c.real) || {}).id || null };
+    this.phase = 'reveal';
+    this.emitFx('reveal');
+  }
+
+  nextFake() {
+    const g = this.g;
+    if (this.phase === 'write') this.openFakeVote();
+    else if (this.phase === 'vote') this.revealFake();
+    else if (this.phase === 'reveal') {
+      g.index++;
+      if (g.index < g.queue.length) this.beginFakeSong(); else this.endGame();
+    }
+  }
+
+  // ---------- Flock Mind ----------
+  startMind() {
+    this.g = { round: -1, rounds: this.settings.mindRounds, deck: [], cur: null };
+    this.nextMindRound();
+  }
+
+  nextMindRound() {
+    const g = this.g;
+    g.round++;
+    if (g.round >= g.rounds) return this.endGame();
+    g.cur = { prompt: this.drawPrompt(PROMPTS.MIND, 'mind'), subs: {}, queue: [], groups: null };
+    this.phase = 'submit';
+    this.nowPlayingId = null;
+  }
+
+  closeMind() {
+    const cur = this.g.cur;
+    const entries = this.players.filter((p) => cur.subs[p.id]).map((p) => this.makeEntry(p.id, cur.subs[p.id], cur.prompt));
+    if (!entries.length) return this.nextMindRound();
+    cur.queue = entries;
+    this.recordHistory(entries);
+    cur.groups = matchGroups(entries);
+    for (const group of cur.groups) {
+      const ids = group.map((id) => entries.find((e) => e.id === id).playerId);
+      for (const pid of ids) this.addPoints(pid, group.length - 1);
+      this.bump('matches', ids, group.length - 1);
+    }
+    this.phase = 'reveal';
+    this.nowPlayingId = cur.groups[0][0]; // the flock's favorite
+    this.emitFx(cur.groups[0].length > 1 ? 'reveal' : 'none');
+  }
+
+  // ---------- Goose Chain ----------
+  startChain() {
+    this.g = { order: this.turnOrder(this.settings.chainLaps), round: -1, queue: [], chain: [], best: 0, cur: null };
+    this.nextChainTurn();
+  }
+
+  nextChainTurn() {
+    const g = this.g;
+    if (!this.advanceTurn()) return this.endGame();
+    const prevId = g.chain.length ? g.chain[g.chain.length - 1] : null;
+    g.cur = { pickerId: g.order[g.round], subs: {}, prevId, entryId: null, votes: {}, result: null };
+    this.phase = 'submit';
+    this.nowPlayingId = prevId; // keep the last link playing for inspiration
+  }
+
+  closeChain() {
+    const g = this.g;
+    const cur = g.cur;
+    const song = cur.subs[cur.pickerId];
+    if (!song) return this.nextChainTurn(); // skipped turn: the chain stays intact
+    const prev = cur.prevId ? g.queue.find((e) => e.id === cur.prevId) : null;
+    const e = this.makeEntry(cur.pickerId, song, prev ? `Linked from “${prev.song.display}”` : 'Started a new chain');
+    g.queue.push(e);
+    this.recordHistory([e]);
+    cur.entryId = e.id;
+    this.nowPlayingId = e.id;
+    if (!prev) {
+      // The first song of a chain needs no vote.
+      g.chain = [e.id];
+      g.best = Math.max(g.best, 1);
+      cur.result = { held: true, start: true, yes: 0, no: 0, length: 1 };
+      this.phase = 'listen';
+    } else this.phase = 'vote';
+  }
+
+  voteChain(pid, target) {
+    const cur = this.g.cur;
+    if (pid === cur.pickerId) throw new GameError('You can’t judge your own link!');
+    if (target !== 'yes' && target !== 'no') throw new GameError('Vote yes or no');
+    cur.votes[pid] = target === 'yes';
+    if (this.allDone()) this.revealChain();
+    this.touch();
+  }
+
+  revealChain() {
+    const g = this.g;
+    const cur = g.cur;
+    const votes = Object.values(cur.votes);
+    const yes = votes.filter(Boolean).length;
+    const no = votes.length - yes;
+    const held = yes >= no; // ties get the benefit of the doubt
+    if (held) {
+      g.chain.push(cur.entryId);
+      g.best = Math.max(g.best, g.chain.length);
+      this.addPoints(cur.pickerId, 1);
+      this.bump('links', [cur.pickerId]);
+    } else {
+      const p = this.getPlayer(cur.pickerId);
+      if (p) p.score = Math.max(0, p.score - 1);
+      g.chain = [];
+    }
+    cur.result = { held, start: false, yes, no, length: g.chain.length };
+    this.phase = 'reveal';
+    this.emitFx(held ? 'reveal' : 'caught');
+  }
+
+  nextChain() {
+    if (this.phase === 'vote') this.revealChain();
+    else this.nextChainTurn();
+  }
+
+  // ---------- Honk Take ----------
+  startHot() {
+    this.g = { order: this.turnOrder(this.settings.hotCycles), round: -1, deck: [], cur: null };
+    this.nextHotRound();
+  }
+
+  nextHotRound() {
+    const g = this.g;
+    if (!this.advanceTurn()) return this.endGame();
+    g.cur = { pickerId: g.order[g.round], prompt: this.drawPrompt(PROMPTS.HOT, 'hot'), subs: {}, queue: [], ratings: {}, result: null };
+    this.phase = 'submit';
+    this.nowPlayingId = null;
+  }
+
+  closeHot() {
+    const cur = this.g.cur;
+    const song = cur.subs[cur.pickerId];
+    if (!song) return this.nextHotRound();
+    const e = this.makeEntry(cur.pickerId, song, cur.prompt);
+    cur.queue = [e];
+    this.recordHistory(cur.queue);
+    this.phase = 'rate';
+    this.nowPlayingId = e.id;
+  }
+
+  rate(pid, value) {
+    this.mustPlayer(pid);
+    if (this.mode !== 'hot' || this.phase !== 'rate') throw new GameError('No rating right now');
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 1 || n > 5) throw new GameError('Rate it from 1 to 5');
+    this.g.cur.ratings[pid] = n;
+    if (this.allDone()) this.revealHot();
+    this.touch();
+  }
+
+  revealHot() {
+    const cur = this.g.cur;
+    const truth = has(cur.ratings, cur.pickerId) ? cur.ratings[cur.pickerId] : null;
+    const exact = [];
+    const close = [];
+    if (truth != null) {
+      for (const [pid, r] of Object.entries(cur.ratings)) {
+        if (pid === cur.pickerId) continue;
+        const d = Math.abs(r - truth);
+        if (d === 0) { exact.push(pid); this.addPoints(pid, 2); this.addPoints(cur.pickerId, 1); } else if (d === 1) { close.push(pid); this.addPoints(pid, 1); }
+      }
+    }
+    this.bump('reads', exact);
+    cur.result = { truth, exact, close };
+    this.phase = 'reveal';
+    this.emitFx('reveal');
+  }
+
+  nextHot() {
+    if (this.phase === 'rate') this.revealHot();
+    else if (this.phase === 'reveal') this.nextHotRound();
+  }
+
   recordHistory(queue) {
     for (const e of queue) this.history.push({ entryId: e.id, playerId: e.playerId, prompt: e.prompt, song: e.song, mode: this.mode });
   }
 
   bump(stat, ids, n = 1) {
     if (!this.stats || n <= 0) return;
-    const t = this.stats[stat];
+    const t = this.stats[stat] || (this.stats[stat] = {});
     for (const id of ids) t[id] = (t[id] || 0) + n;
   }
 
@@ -652,7 +1160,7 @@ class Room {
     const st = this.stats;
     if (!st) return [];
     const top = (table) => {
-      const entries = Object.entries(table).filter(([, n]) => n > 0);
+      const entries = Object.entries(table || {}).filter(([, n]) => n > 0);
       if (!entries.length) return null;
       const max = Math.max(...entries.map(([, n]) => n));
       return { ids: entries.filter(([, n]) => n === max).map(([id]) => id), n: max };
@@ -670,6 +1178,11 @@ class Room {
     add('royal', 'Royal Favorite', st.crowns, (n) => `crowned ${plural(n, 'time')}`);
     add('bluffer', 'Smooth Bluffer', st.escapes, (n) => `escaped as the Goose ${plural(n, 'time')}`);
     add('detective', 'Goose Detective', st.catches, (n) => `caught the Goose ${plural(n, 'time')}`);
+    add('fighter', 'Heavyweight', st.fights, (n) => `won ${plural(n, 'fight')}`);
+    add('forger', 'Master Forger', st.forged, (n) => `fooled ${plural(n, 'goose', 'geese')} with fake prompts`);
+    add('hive', 'Hive Mind', st.matches, (n) => plural(n, 'match', 'matches'));
+    add('linker', 'Missing Link', st.links, (n) => `forged ${plural(n, 'link')}`);
+    add('reader', 'Mind Reader', st.reads, (n) => plural(n, 'exact guess', 'exact guesses'));
     add('hype', 'Hype Goose', st.reactsSent, (n) => plural(n, 'reaction'));
     const crowd = top(st.reacts);
     if (crowd) {
@@ -692,10 +1205,15 @@ class Room {
   timedDuration() {
     if (!this.settings.timers || !this.g) return 0;
     switch (this.phase) {
-      case 'submit': return (this.mode === 'loose' ? this.settings.promptsPerPlayer : 1) * TIMERS.perSong * 1000;
+      case 'submit': {
+        const songs = this.mode === 'loose' ? this.settings.promptsPerPlayer : this.mode === 'fake' ? this.settings.fakePrompts : 1;
+        return songs * TIMERS.perSong * 1000;
+      }
       case 'listen': return this.mode === 'loose' ? TIMERS.guess * 1000 : 0;
       case 'judge': return TIMERS.judge * 1000;
       case 'vote': return TIMERS.vote * 1000;
+      case 'write': return TIMERS.write * 1000;
+      case 'rate': return TIMERS.rate * 1000;
       default: return 0;
     }
   }
@@ -740,12 +1258,14 @@ class Room {
   // ---------- custom prompts ----------
   addPrompt(mode, rawText, by = null, quiet = false) {
     if (this.phase !== 'lobby' && this.phase !== 'gameover') throw new GameError('Add prompts between games');
-    if (!has(MODES, mode)) throw new GameError('Unknown game mode');
+    if (!has(MODE_PROMPTS, mode)) throw new GameError('Unknown game mode');
+    const kind = MODE_PROMPTS[mode];
+    if (!kind) throw new GameError(`${MODES[mode].name} doesn’t use prompts`);
     const text = String(rawText ?? '').trim().replace(/\s+/g, ' ');
-    const max = mode === 'secret' ? 30 : 220;
-    if (text.length < (mode === 'secret' ? 2 : 8)) throw new GameError(mode === 'secret' ? 'Type a feeling' : 'That prompt is a bit short');
+    const max = kind === 'secret' ? 30 : 220;
+    if (text.length < (kind === 'secret' ? 2 : 8)) throw new GameError(kind === 'secret' ? 'Type a feeling' : 'That prompt is a bit short');
     if (text.length > max) throw new GameError(`Keep it under ${max} characters`);
-    const list = this.custom[mode];
+    const list = this.custom[kind];
     if (list.length >= MAX_CUSTOM) throw new GameError('That\u2019s plenty of custom prompts!');
     if (list.some((c) => c.text.toLowerCase() === text.toLowerCase())) throw new GameError('That one is already in');
     const prompt = { id: `c${++this.customCount}`, text, by };
@@ -791,11 +1311,11 @@ class Room {
     return this.importPack(pack);
   }
 
-  /** Bulk-add prompts ({loose:[], king:[], secret:[]}); skips duplicates and invalid ones. */
+  /** Bulk-add prompts ({loose:[], king:[], secret:[], mind:[], hot:[]}); skips duplicates and invalid ones. */
   importPack(pack) {
     if (!pack || typeof pack !== 'object') throw new GameError('That pack file looks empty');
     let added = 0;
-    for (const mode of Object.keys(MODES)) {
+    for (const mode of PROMPT_KINDS) {
       const list = Array.isArray(pack[mode]) ? pack[mode].slice(0, MAX_CUSTOM) : [];
       for (const text of list) {
         try { this.addPrompt(mode, text, null, true); added++; } catch { /* skip */ }
@@ -808,7 +1328,7 @@ class Room {
 
   exportPack() {
     const out = { name: 'A Goose Among Sirens prompt pack', version: 1 };
-    for (const mode of Object.keys(MODES)) out[mode] = this.custom[mode].map((c) => c.text);
+    for (const mode of PROMPT_KINDS) out[mode] = this.custom[mode].map((c) => c.text);
     return out;
   }
 
@@ -824,7 +1344,7 @@ class Room {
     for (const k of SAVED_FIELDS) if (has(data, k)) room[k] = data[k];
     room.npSeen = room.nowPlayingId; // keep the saved start time
     room.settings = { ...new Room('x').settings, ...room.settings };
-    room.custom = { loose: [], king: [], secret: [], ...room.custom };
+    room.custom = { loose: [], king: [], secret: [], mind: [], hot: [], ...room.custom };
     for (const p of [...room.players, ...room.audience]) { p.connected = false; normalizeLook(p); }
     room.syncTimer(); // a running countdown restarts from full time
     return room;
@@ -894,20 +1414,139 @@ class Room {
       v.me = { id: a.id, name: a.name, color: a.color, ...lookOf(a), score: 0 };
       v.isAudience = true;
       v.mySuggestions = [];
-      if (this.g && this.phase !== 'gameover') {
-        const pub = this.mode === 'loose' ? this.looseView(null, true) : this.mode === 'king' ? this.kingView(null, true) : this.secretView(null, true);
-        Object.assign(v, pub);
-      }
+      if (this.g && this.phase !== 'gameover') Object.assign(v, this.modeView(null, true));
       return v;
     } else {
       const me = this.getPlayer(pid);
       v.me = me ? { id: me.id, name: me.name, color: me.color, ...lookOf(me), score: me.score } : null;
       v.mySuggestions = Object.entries(this.custom).flatMap(([mode, list]) => list.filter((c) => c.by === pid).map((c) => ({ mode, text: c.text })));
     }
-    if (this.g && this.phase !== 'gameover') {
-      if (this.mode === 'loose') Object.assign(v, this.looseView(pid, isHost));
-      else if (this.mode === 'king') Object.assign(v, this.kingView(pid, isHost));
-      else Object.assign(v, this.secretView(pid, isHost));
+    if (this.g && this.phase !== 'gameover') Object.assign(v, this.modeView(pid, isHost));
+    return v;
+  }
+
+  modeView(pid, isHost) {
+    switch (this.mode) {
+      case 'loose': return this.looseView(pid, isHost);
+      case 'king': return this.kingView(pid, isHost);
+      case 'secret': return this.secretView(pid, isHost);
+      case 'fight': return this.fightView(pid, isHost);
+      case 'fake': return this.fakeView(pid, isHost);
+      case 'mind': return this.mindView(pid, isHost);
+      case 'chain': return this.chainView(pid, isHost);
+      case 'hot': return this.hotView(pid, isHost);
+      default: return {};
+    }
+  }
+
+  fightView(pid, isHost) {
+    const g = this.g;
+    const c = g.cur;
+    const reveal = this.phase === 'reveal';
+    const v = { round: g.round + 1, rounds: g.rounds, prompt: c.prompt };
+    if (!isHost) v.mySong = songView(c.subs[pid]);
+    const side = (id) => {
+      const e = this.entryById(id);
+      return { id, display: e.song.display, ownerId: reveal ? e.playerId : undefined };
+    };
+    if (c.stageSize) {
+      v.stage = { number: c.stage, label: c.stageSize <= 2 ? 'Final' : c.stageSize <= 4 ? 'Semifinal' : c.stageSize <= 8 ? 'Quarterfinal' : `Round ${c.stage}` };
+      v.left = c.alive.length + c.winners.length + (reveal || !c.match ? 0 : 2);
+      v.bye = c.bye ? side(c.bye) : null;
+    }
+    if (c.match) {
+      v.match = { number: c.matchNo, a: side(c.match[0]), b: side(c.match[1]), playing: this.phase === 'listen' ? c.playIdx : null };
+      if (!isHost) {
+        const mine = c.match.find((id) => this.entryById(id).playerId === pid);
+        v.myEntry = mine || null;
+        v.myVote = c.votes[pid] || null;
+      }
+    }
+    if (reveal) {
+      v.result = { ...c.result, winnerSide: side(c.result.winner), loserSide: c.result.loser ? side(c.result.loser) : null };
+      v.votes = { ...c.votes };
+    }
+    return v;
+  }
+
+  fakeView(pid, isHost) {
+    const g = this.g;
+    const v = { promptsPerPlayer: this.settings.fakePrompts, total: g.queue.length, index: g.index };
+    if (this.phase === 'submit') {
+      if (!isHost) v.prompts = g.assignments[pid].map((text, i) => ({ text, song: songView(g.subs[pid][i]) }));
+      return v;
+    }
+    const c = g.cur;
+    const e = this.fakeEntry();
+    const reveal = this.phase === 'reveal';
+    v.current = { number: g.index + 1, display: e.song.display };
+    if (!isHost) {
+      v.isMine = e.playerId === pid;
+      if (v.isMine || reveal) v.realPrompt = e.prompt;
+      v.myFake = c.fakes[pid] || null;
+      v.myVote = c.votes[pid] || null;
+    }
+    if (c.choices) {
+      v.choices = c.choices.map((ch) => ({
+        id: ch.id, text: ch.text,
+        mine: !isHost && ch.authors.includes(pid),
+        ...(reveal ? { real: ch.real, authors: ch.authors } : {}),
+      }));
+    }
+    if (reveal) {
+      v.realPrompt = e.prompt;
+      v.ownerId = e.playerId;
+      v.votes = { ...c.votes };
+      v.result = c.result;
+    }
+    return v;
+  }
+
+  mindView(pid, isHost) {
+    const g = this.g;
+    const c = g.cur;
+    const v = { round: g.round + 1, rounds: g.rounds, prompt: c.prompt };
+    if (!isHost) v.mySong = songView(c.subs[pid]);
+    if (this.phase === 'reveal' && c.groups) {
+      v.groups = c.groups.map((ids) => ids.map((id) => {
+        const e = this.entryById(id);
+        return { id, display: e.song.display, ownerId: e.playerId };
+      }));
+    }
+    return v;
+  }
+
+  chainView(pid, isHost) {
+    const g = this.g;
+    const c = g.cur;
+    const byId = (id) => g.queue.find((e) => e.id === id);
+    const link = (e) => ({ id: e.id, display: e.song.display, ownerId: e.playerId });
+    const v = { round: g.round + 1, rounds: g.order.length, pickerId: c.pickerId, chainLength: g.chain.length, best: g.best };
+    v.chain = g.chain.slice(-6).map((id) => link(byId(id)));
+    if (c.prevId) v.prev = link(byId(c.prevId));
+    if (c.entryId) v.current = link(byId(c.entryId));
+    if (!isHost) {
+      v.isPicker = pid === c.pickerId;
+      if (v.isPicker) v.mySong = songView(c.subs[pid]);
+      v.myVote = has(c.votes, pid) ? (c.votes[pid] ? 'yes' : 'no') : null;
+    }
+    if (this.phase === 'reveal' || (this.phase === 'listen' && c.result)) v.result = c.result;
+    return v;
+  }
+
+  hotView(pid, isHost) {
+    const g = this.g;
+    const c = g.cur;
+    const v = { round: g.round + 1, rounds: g.order.length, pickerId: c.pickerId, prompt: c.prompt };
+    if (c.queue.length) v.current = { id: c.queue[0].id, display: c.queue[0].song.display };
+    if (!isHost) {
+      v.isPicker = pid === c.pickerId;
+      if (v.isPicker) v.mySong = songView(c.subs[pid]);
+      v.myRating = c.ratings[pid] || null;
+    }
+    if (this.phase === 'reveal') {
+      v.ratings = { ...c.ratings };
+      v.result = c.result;
     }
     return v;
   }
@@ -982,4 +1621,4 @@ class Room {
   }
 }
 
-module.exports = { MAX_AUDIENCE, Room, MODES, MIN_PLAYERS, SWAPS_PER_GAME, MAX_PLAYERS, TIMERS, REACTIONS, HATS, ACCESSORIES, FEATHERS, FACES, GameError, shuffle };
+module.exports = { MAX_AUDIENCE, Room, MODES, MIN_PLAYERS, SWAPS_PER_GAME, MAX_PLAYERS, TIMERS, REACTIONS, HATS, ACCESSORIES, FEATHERS, FACES, GameError, shuffle, matchGroups };

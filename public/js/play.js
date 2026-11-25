@@ -3,7 +3,8 @@
 import {
   h, api, openStream, toast, store, playerById, chip, searchUrls, gooseIcon, modeIcon,
   mountInto, clearKept, syncClock, timerBadge, copyText, songHref, setlistText, youtubePlaylistUrl, REACTIONS,
-  gooseAvatar, HAT_LABELS, ACCESSORY_LABELS, FEATHER_LABELS, FEATHER_SWATCH, FACE_LABELS, shareLink, shareToast,
+  gooseAvatar, HAT_LABELS, ACCESSORY_LABELS, FEATHER_LABELS, FEATHER_SWATCH, DARK_FEATHERS, FACE_LABELS, shareLink, shareToast,
+  RATINGS,
 } from './common.js';
 import { updateListening, isDeviceMuted } from './listen.js';
 import { sfx } from './sfx.js';
@@ -163,7 +164,7 @@ function haptics(s) {
   if (prevPhaseKey && key !== prevPhaseKey && navigator.vibrate) {
     try {
       if (s.phase === 'reveal' || s.phase === 'gameover') navigator.vibrate([40, 60, 40]);
-      else if (['submit', 'judge', 'vote'].includes(s.phase)) navigator.vibrate(60);
+      else if (['submit', 'judge', 'vote', 'write', 'rate'].includes(s.phase)) navigator.vibrate(60);
     } catch { /* ignore */ }
   }
   prevPhaseKey = key;
@@ -224,7 +225,7 @@ function hatPicker(s) {
     body = grid('Accessory', s.accessories || [], me.accessory, ACCESSORY_LABELS, (a) => ({ accessory: a }), (accessory) => setLook({ accessory }));
   } else if (lookTab === 'feathers') {
     body = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Feathers' }, (s.feathers || []).map((f) => h('button', {
-      class: `swatch feather${f === 'black' ? ' dark' : ''}${f === me.feathers ? ' selected' : ''}`,
+      class: `swatch feather${DARK_FEATHERS.has(f) ? ' dark' : ''}${f === me.feathers ? ' selected' : ''}`,
       style: { '--c': FEATHER_SWATCH[f] || '#fff' },
       role: 'radio',
       'aria-checked': f === me.feathers ? 'true' : 'false',
@@ -318,6 +319,18 @@ function audienceView(s) {
     if (s.prompt) lines.push(h('div', { class: 'feeling small' }, s.prompt));
     if (s.gooseId) lines.push(h('h2', null, 'The Goose was ', chip(playerById(s, s.gooseId))));
     if (!s.prompt) lines.push(h('p', null, 'Everyone has a secret feeling\u2026 except one goose. Watch closely!'));
+  } else if (s.mode === 'fight' && s.prompt) {
+    lines.push(h('div', { class: 'kicker' }, `\u{1F94A} Round ${s.round} of ${s.rounds}${s.stage ? ` \u00B7 ${s.stage.label}` : ''}`), h('p', { class: 'prompt' }, s.prompt));
+    if (s.result?.winnerSide) lines.push(h('h2', null, chip(playerById(s, s.result.winnerSide.ownerId)), s.result.champion ? ' is the champion!' : ' wins the fight!'));
+  } else if (s.mode === 'fake' && s.current) {
+    lines.push(h('div', { class: 'kicker' }, `Song ${s.current.number} of ${s.total}`), h('p', { class: 'prompt' }, s.realPrompt || 'What was the prompt? Watch the fakes roll in\u2026'));
+  } else if (s.mode === 'mind' && s.prompt) {
+    lines.push(h('div', { class: 'kicker' }, `\u{1F9E0} Round ${s.round} of ${s.rounds}`), h('p', { class: 'prompt' }, s.prompt));
+  } else if (s.mode === 'chain' && s.pickerId) {
+    lines.push(h('div', { class: 'kicker' }, `\u{1F517} Chain of ${s.chainLength} \u00B7 ${name(s.pickerId)}\u2019s turn`));
+    if (s.current) lines.push(h('p', { class: 'prompt' }, s.current.display));
+  } else if (s.mode === 'hot' && s.prompt) {
+    lines.push(h('div', { class: 'kicker' }, `\u{1F336}\uFE0F DJ ${name(s.pickerId)}`), h('p', { class: 'prompt' }, s.prompt));
   }
   if (!lines.length) lines.push(h('p', null, 'Watch the big screen!'));
   if (s.phase === 'gameover') {
@@ -346,6 +359,11 @@ function view(s) {
   if (s.phase === 'gameover') return gameover(s);
   if (s.mode === 'loose') return loose(s);
   if (s.mode === 'king') return king(s);
+  if (s.mode === 'fight') return fight(s);
+  if (s.mode === 'fake') return fake(s);
+  if (s.mode === 'mind') return mind(s);
+  if (s.mode === 'chain') return chain(s);
+  if (s.mode === 'hot') return hot(s);
   return secret(s);
 }
 
@@ -353,12 +371,16 @@ const SUGGEST = {
   loose: { what: 'prompt', placeholder: 'What song would you play at a goose wedding?' },
   king: { what: 'scenario', placeholder: 'King Goose gets stuck in a revolving door.' },
   secret: { what: 'feeling', placeholder: 'Hangry' },
+  mind: { what: 'prompt', placeholder: 'A song everyone knows from a car commercial' },
+  hot: { what: 'prompt', placeholder: 'A song you\u2019d play at your own roast' },
 };
 
 function suggestCard(s) {
-  const sg = SUGGEST[s.mode];
-  const key = `suggest-${s.mode}`;
-  const mine = s.mySuggestions.filter((m) => m.mode === s.mode);
+  const kind = s.modeInfo.prompts;
+  if (!kind) return null; // Goose Chain has no prompts
+  const sg = SUGGEST[kind];
+  const key = `suggest-${kind}`;
+  const mine = s.mySuggestions.filter((m) => m.mode === kind);
   return card(
     h('h2', null, `Bored? Suggest a ${sg.what}`),
     h('p', { class: 'fine left' }, 'Your suggestions get mixed into the game (anonymously).'),
@@ -371,7 +393,7 @@ function suggestCard(s) {
         try { await act('suggest', { text }); clearKept(app, key); toast('Added!'); } catch (err) { toast(err.message); }
       },
     },
-    h('input', { type: 'text', 'data-keep': key, placeholder: sg.placeholder, maxlength: s.mode === 'secret' ? 30 : 220, 'aria-label': `Suggest a ${sg.what}` }),
+    h('input', { type: 'text', 'data-keep': key, placeholder: sg.placeholder, maxlength: kind === 'secret' ? 30 : 220, 'aria-label': `Suggest a ${sg.what}` }),
     h('button', { class: 'btn primary', type: 'submit' }, 'Add')),
     mine.length ? h('ul', { class: 'phone-tracks' }, mine.map((m) => h('li', null, h('span', { class: 'check' }, '\u2713'), m.text))) : null,
   );
@@ -600,6 +622,201 @@ function secret(s) {
 function whoPicked(s) {
   return card(h('div', { class: 'kicker' }, 'Who picked what'),
     h('ul', { class: 'phone-tracks' }, s.tracks.map((t) => h('li', null, chip(playerById(s, t.ownerId)), h('span', null, t.display)))));
+}
+
+// ----- shared bits for the newer modes -----
+
+async function tap(type, extra) {
+  try { await act(type, extra); if (navigator.vibrate) navigator.vibrate(20); } catch (err) { toast(err.message); }
+}
+
+function choiceButtons(items, selected, onPick) {
+  return h('div', { class: 'pick-list' }, items.map((it) => h('button', {
+    class: `pick wide${it.id === selected ? ' selected' : ''}`,
+    style: it.color ? { '--c': it.color } : null,
+    disabled: Boolean(it.disabled),
+    'aria-pressed': it.id === selected ? 'true' : 'false',
+    onclick: () => onPick(it.id),
+  }, it.label)));
+}
+
+// ----- Goose Fight -----
+
+function fight(s) {
+  const head = card(h('div', { class: 'kicker' }, `\u{1F94A} Round ${s.round} of ${s.rounds}${s.stage ? ` \u00B7 ${s.stage.label}` : ''}`), h('p', { class: 'prompt' }, s.prompt));
+  if (s.phase === 'submit') {
+    return [head, card(h('h2', null, 'Pick your fighter'),
+      h('p', { class: 'fine left' }, 'Everyone answers this same prompt. Your song battles the others, two at a time.'),
+      songForm({ key: `fight-${s.round}`, current: s.mySong, cta: 'Enter the ring' }))];
+  }
+  const r = s.result;
+  if (s.phase === 'reveal' && r.walkover) return [head, waiting('Walkover!', 'Only one song entered the ring.')];
+  const m = s.match;
+  if (s.phase === 'listen') {
+    return [head, waiting(`Fight ${m.number}`, m.playing === 0 ? `\u{1F534} ${m.a.display}` : `\u{1F535} ${m.b.display}`)];
+  }
+  if (s.phase === 'vote') {
+    if (s.myEntry) return [head, waiting('Your song is in this fight!', 'Sit tight while the flock decides.')];
+    return [head, card(h('h2', null, 'Who wins?'),
+      choiceButtons([
+        { id: m.a.id, label: `\u{1F534} ${m.a.display}`, color: '#ff6b6b' },
+        { id: m.b.id, label: `\u{1F535} ${m.b.display}`, color: '#4cc9f0' },
+      ], s.myVote, (id) => tap('vote', { target: id })),
+      s.myVote ? h('p', { class: 'fine' }, 'Locked in. You can change it until the reveal.') : null)];
+  }
+  const winner = playerById(s, r.winnerSide.ownerId);
+  const mine = r.winnerSide.ownerId === s.me.id;
+  const ko = r.loserSide && r.loserSide.ownerId === s.me.id;
+  return [head, card(h('div', { class: 'result' },
+    h('div', { class: 'big-emoji' }, r.champion ? '\u{1F3C6}' : mine ? '\u{1F94A}' : ko ? '\u{1F635}' : '\u{1F3B5}'),
+    h('h2', null, chip(winner), r.champion ? ' is the champion!' : ' wins the fight!'),
+    h('p', null, mine ? (r.champion ? '+3 for you!' : '+1 for you!') : ko ? 'Knocked out.' : `\u201C${r.winnerSide.display}\u201D`)))];
+}
+
+// ----- Fake Prompt -----
+
+function fake(s) {
+  if (s.phase === 'submit') {
+    const done = s.prompts.every((p) => p.song);
+    return [
+      done ? waiting('All your songs are in!', 'You can still change them until everyone finishes.') : null,
+      ...s.prompts.map((p, i) => card(
+        h('div', { class: 'kicker' }, `Prompt ${i + 1} of ${s.prompts.length}`),
+        h('p', { class: 'prompt' }, p.text),
+        h('p', { class: 'fine left' }, 'Everyone else will try to fake this prompt. Keep it secret!'),
+        songForm({ key: `fake-${i}-${p.text}`, slot: i, current: p.song }))),
+    ];
+  }
+  const c = s.current;
+  const head = card(h('div', { class: 'kicker' }, `\u{1F3AD} Song ${c.number} of ${s.total}`), h('p', { class: 'song-now' }, '\u{1F3B5} ', c.display));
+  if (s.phase === 'write') {
+    if (s.isMine) {
+      return [head, card(h('div', { class: 'kicker' }, 'Your real prompt'), h('p', { class: 'prompt' }, s.realPrompt)),
+        waiting('This one\u2019s yours!', 'Everyone is writing fake prompts for your song. Keep a straight face\u2026')];
+    }
+    const key = `fake-write-${c.number}`;
+    return [head, card(
+      h('h2', null, 'Write a fake prompt'),
+      h('p', { class: 'fine left' }, 'What prompt could this song have been answering? Fool the others!'),
+      s.myFake ? h('div', { class: 'picked' }, h('span', { class: 'check' }, '\u2713'), h('span', null, s.myFake)) : null,
+      h('form', {
+        class: 'input-row',
+        onsubmit: async (e) => {
+          e.preventDefault();
+          const text = e.currentTarget.querySelector('input').value.trim();
+          if (!text) return;
+          try { await act('fake', { text }); clearKept(app, key); } catch (err) { toast(err.message); }
+        },
+      },
+      h('input', { type: 'text', 'data-keep': key, maxlength: 120, placeholder: 'What song would you play at\u2026', 'aria-label': 'Your fake prompt', enterkeyhint: 'send' }),
+      h('button', { class: 'btn primary', type: 'submit' }, s.myFake ? 'Change' : 'Submit')))];
+  }
+  if (s.phase === 'vote') {
+    if (s.isMine) return [head, waiting('Watch them squirm', 'Everyone is hunting for your real prompt.')];
+    return [head, card(h('h2', null, 'Which is the real prompt?'),
+      choiceButtons(s.choices.map((ch) => ({ id: ch.id, label: ch.mine ? `${ch.text} (yours)` : ch.text, disabled: ch.mine })),
+        s.myVote, (id) => tap('vote', { target: id })),
+      s.myVote ? h('p', { class: 'fine' }, 'Locked in. You can change it until the reveal.') : null)];
+  }
+  const owner = playerById(s, s.ownerId);
+  const found = s.result.found.includes(s.me.id);
+  const myChoice = s.choices.find((ch) => ch.authors && ch.authors.includes(s.me.id));
+  const fooled = myChoice ? Object.values(s.votes).filter((v) => v === myChoice.id).length : 0;
+  let msg;
+  if (s.isMine) msg = `${s.result.found.length} of them found it.`;
+  else msg = `${found ? '+2, you found it!' : 'You got fooled.'}${fooled ? ` +${fooled} for fooling ${fooled === 1 ? 'someone' : `${fooled} geese`}!` : ''}`;
+  return [card(h('div', { class: 'kicker' }, 'The real prompt was'), h('p', { class: 'prompt' }, s.realPrompt),
+    h('div', { class: 'result' },
+      h('div', { class: 'big-emoji' }, found ? '\u{1F3AF}' : fooled ? '\u{1F3AD}' : '\u{1F92D}'),
+      h('h2', null, 'Picked by ', chip(owner)),
+      h('p', null, msg)))];
+}
+
+// ----- Flock Mind -----
+
+function mind(s) {
+  const head = card(h('div', { class: 'kicker' }, `\u{1F9E0} Round ${s.round} of ${s.rounds}`), h('p', { class: 'prompt' }, s.prompt));
+  if (s.phase === 'submit') {
+    return [head, card(h('h2', null, 'What will the flock pick?'),
+      h('p', { class: 'fine left' }, 'Score a point for every player who picks the same song or artist as you.'),
+      songForm({ key: `mind-${s.round}`, current: s.mySong }))];
+  }
+  const group = (s.groups || []).find((g) => g.some((p) => p.ownerId === s.me.id));
+  const n = group ? group.length - 1 : 0;
+  const mates = group ? group.filter((p) => p.ownerId !== s.me.id).map((p) => playerById(s, p.ownerId)?.name).filter(Boolean) : [];
+  return [head, card(h('div', { class: 'result' },
+    h('div', { class: 'big-emoji' }, n ? '\u{1F9E0}' : '\u{1F9A2}'),
+    h('h2', null, group ? (n ? `You matched ${n}! +${n}` : 'Nobody matched you') : 'You sat this one out'),
+    mates.length ? h('p', null, `Great minds: ${mates.join(', ')}`) : null))];
+}
+
+// ----- Goose Chain -----
+
+function chain(s) {
+  const picker = playerById(s, s.pickerId);
+  const head = card(h('div', { class: 'kicker' }, `\u{1F517} Turn ${s.round} of ${s.rounds} \u00B7 Chain of ${s.chainLength}`),
+    s.prev ? [h('div', { class: 'kicker' }, 'Last link'), h('p', { class: 'prompt' }, s.prev.display)] : h('p', null, 'A brand-new chain starts now.'));
+  if (s.phase === 'submit') {
+    if (!s.isPicker) return [head, waiting(`${picker?.name || 'Someone'} is picking the next link`, 'How would YOU link it? Get ready to judge.')];
+    return [head, card(
+      h('div', { class: 'role' }, 'Your turn!'),
+      h('h2', null, s.prev ? 'Add a song that links to it' : 'Start the chain with any song'),
+      h('p', { class: 'fine left' }, s.prev ? 'A shared word, artist, decade, genre, vibe\u2026 You\u2019ll explain the link out loud.' : 'Pick something with plenty of ways to link to it.'),
+      songForm({ key: `chain-${s.round}`, current: s.mySong, cta: 'Add to the chain' }))];
+  }
+  if (s.phase === 'listen') return [waiting('A new chain begins!', s.current ? s.current.display : '')];
+  if (s.phase === 'vote') {
+    if (s.isPicker) return [waiting('Explain your link!', `How does \u201C${s.current.display}\u201D link to \u201C${s.prev.display}\u201D?`)];
+    return [card(h('div', { class: 'kicker' }, 'From'), h('p', { class: 'prompt' }, s.prev.display),
+      h('div', { class: 'kicker' }, `To (${picker?.name || 'their'} pick)`), h('p', { class: 'prompt' }, s.current.display)),
+    card(h('h2', null, 'Does the link hold?'),
+      h('div', { class: 'pick-grid' }, [['yes', '\u{1F44D} Yes', '#06d6a0'], ['no', '\u{1F44E} No', '#ff6b6b']].map(([v, label, c]) => h('button', {
+        class: `pick${s.myVote === v ? ' selected' : ''}`, style: { '--c': c }, 'aria-pressed': s.myVote === v ? 'true' : 'false',
+        onclick: () => tap('vote', { target: v }),
+      }, label))),
+      s.myVote ? h('p', { class: 'fine' }, 'Locked in. You can change it until the reveal.') : null)];
+  }
+  const r = s.result;
+  return [card(h('div', { class: 'result' },
+    h('div', { class: 'big-emoji' }, r.held ? '\u{1F517}' : '\u{1F4A5}'),
+    h('h2', null, r.held ? 'The chain holds!' : 'Chain broken!'),
+    h('p', null, `${r.yes} \u{1F44D} \u00B7 ${r.no} \u{1F44E}`),
+    s.isPicker ? h('p', null, r.held ? '+1 for you!' : 'You lose a point.') : null))];
+}
+
+// ----- Honk Take -----
+
+function hot(s) {
+  const dj = playerById(s, s.pickerId);
+  const head = card(h('div', { class: 'kicker' }, `\u{1F336}\uFE0F Round ${s.round} of ${s.rounds} \u00B7 DJ ${dj?.name || ''}`), h('p', { class: 'prompt' }, s.prompt));
+  if (s.phase === 'submit') {
+    if (!s.isPicker) return [head, waiting(`${dj?.name || 'The DJ'} is picking\u2026`, 'Get ready to guess how much they love it.')];
+    return [head, card(h('div', { class: 'role' }, 'You\u2019re the DJ!'),
+      h('p', { class: 'fine left' }, 'Pick a song for this prompt. Then you\u2019ll secretly rate it, and everyone tries to guess your rating.'),
+      songForm({ key: `hot-${s.round}`, current: s.mySong, cta: 'Drop it' }))];
+  }
+  if (s.phase === 'rate') {
+    return [head, card(
+      h('p', { class: 'song-now' }, '\u{1F3B5} ', s.current.display),
+      h('h2', null, s.isPicker ? 'Be honest: how much do you love it?' : `How much does ${dj?.name || 'the DJ'} love it?`),
+      h('div', { class: 'rating-row' }, RATINGS.map((r) => h('button', {
+        class: `rate-btn${s.myRating === r.v ? ' selected' : ''}`,
+        'aria-label': `${r.v}: ${r.label}`, 'aria-pressed': s.myRating === r.v ? 'true' : 'false',
+        onclick: () => tap('rate', { value: r.v }),
+      }, h('span', { class: 'rate-emoji' }, r.emoji), h('span', { class: 'rate-num' }, String(r.v))))),
+      s.myRating ? h('p', { class: 'fine' }, `${RATINGS[s.myRating - 1].label}. You can change it until the reveal.`) : null)];
+  }
+  const r = s.result;
+  const truth = r.truth ? RATINGS[r.truth - 1] : null;
+  let msg;
+  if (s.isPicker) msg = r.exact.length ? `${r.exact.length} exact guess${r.exact.length === 1 ? '' : 'es'}: +${r.exact.length} for you!` : 'Nobody read you exactly. Mysterious!';
+  else if (r.exact.includes(s.me.id)) msg = '+2, mind reader!';
+  else if (r.close.includes(s.me.id)) msg = '+1, so close!';
+  else msg = s.myRating ? 'Not even close.' : 'You didn\u2019t guess.';
+  return [head, card(h('div', { class: 'result' },
+    h('div', { class: 'big-emoji' }, truth ? truth.emoji : '\u{1F937}'),
+    h('h2', null, truth ? `${dj?.name || 'The DJ'}: ${truth.v}/5 \u00B7 ${truth.label}` : `${dj?.name || 'The DJ'} didn\u2019t rate it`),
+    h('p', null, msg)))];
 }
 
 // ----- game over -----

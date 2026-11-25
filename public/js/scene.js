@@ -213,6 +213,11 @@ const MOODS = {
   loose:    { top: '#1a2a6c', bot: '#fd8d3c', sea: '#16425b', accent: '#ffb347', stars: 0.25 },
   king:     { top: '#2d0b45', bot: '#c9a227', sea: '#241e4e', accent: '#ffd700', stars: 0.35 },
   secret:   { top: '#020812', bot: '#12395a', sea: '#061a2b', accent: '#9ad1ff', stars: 1.0 },
+  fight:    { top: '#3b0a0a', bot: '#e85d04', sea: '#370617', accent: '#ffba08', stars: 0.2 },
+  fake:     { top: '#1b1035', bot: '#8e5bd6', sea: '#24124a', accent: '#f0a6ca', stars: 0.5 },
+  mind:     { top: '#0b2545', bot: '#5fb592', sea: '#13315c', accent: '#9ee6c4', stars: 0.4 },
+  chain:    { top: '#14213d', bot: '#7b8cde', sea: '#1d2b53', accent: '#fca311', stars: 0.35 },
+  hot:      { top: '#4a0d1a', bot: '#ff4d6d', sea: '#3d0c1c', accent: '#ffb3c1', stars: 0.25 },
   gameover: { top: '#3a0ca3', bot: '#f72585', sea: '#240046', accent: '#ffd166', stars: 0.6 },
 };
 

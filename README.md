@@ -50,7 +50,7 @@ The free plan sleeps after about 15 minutes idle and takes 30–60 seconds to wa
 
 ## Game modes
 
-All three modes accept **2–12 players** (3+ is the real party experience; fewer is handy for testing or demos). King Goose needs at least 2. The host screen is not a player.
+All modes accept up to **12 players** (3+ is the real party experience). A Goose is Loose!, King Goose, Secret Goose and Honk Take work with 2; Goose Fight, Fake Prompt, Flock Mind and Goose Chain need at least 3. The host screen is not a player.
 
 ### 🪿 A Goose is Loose!
 Each player gets **3 random prompts** (1–3, adjustable in the lobby) and can **swap up to 2** they don't like for new ones before answering, such as *"What song should be playing when you inevitably take over the world?"*, and answers each with a song.
@@ -78,6 +78,36 @@ The design doc doesn't give scoring for this mode, so we use these house rules:
 
 The Goose rotates each round. The default is 3 rounds, adjustable up to 12.
 
+### 🥊 Goose Fight
+Everyone answers the **same prompt** with a song. The songs then face off **two at a time in a bracket** (an odd song out gets a bye). Both fighters play, then everyone whose song isn't in that fight votes for the winner. Ties are settled by a coin flip.
+
+- **+1** for every fight your song wins, and **+2** more for the last song standing.
+- 1–3 rounds (a new prompt and bracket each round).
+
+### 🎭 Fake Prompt
+Like *A Goose is Loose!*, everyone answers secret prompts with songs (1 or 2 each). Then, for each song:
+
+1. **Write:** while it plays, everyone except its picker writes a **fake prompt** it could have answered. (Writing the real one by accident is blocked, and identical fakes merge.)
+2. **Vote:** everyone picks the real prompt from the list. You can't pick your own fake, and the picker sits this out.
+3. **Reveal:** **+2** for finding the real prompt, **+1** to a fake's author for every player it fooled.
+
+### 🧠 Flock Mind
+Everyone gets the same prompt, like *"The ultimate karaoke song"*, and tries to pick **the song the rest of the flock will pick**. Picks match if they're the same link, or share a song title or artist name (case, punctuation and "(Official Video)"-style noise are ignored). **+1** for every other player who matched you. The flock's favorite plays on the reveal. 3–8 rounds.
+
+### 🔗 Goose Chain
+Players take turns adding a song to **one long chain**. Each song has to link to the one before it: a shared word, artist, decade, genre or vibe. The picker explains the link out loud, then everyone else votes 👍 or 👎 (ties pass).
+
+- **+1** for a link that holds.
+- A broken link costs the picker **a point** (never below zero), and the next goose starts a fresh chain. The first song of a chain needs no vote.
+- 1–3 turns each. The host shows the current chain and the best chain so far.
+
+### 🌶️ Honk Take
+Players take turns as the **DJ**. The DJ gets a prompt, like *"A guilty pleasure you'll defend to the death"*, and plays a song for it. While it plays, the DJ secretly rates it from 1 🤮 to 5 😍, and everyone else guesses the DJ's rating.
+
+- **+2** for an exact guess, **+1** for one off.
+- The DJ gets **+1** for every exact guess.
+- 1–3 turns as DJ each.
+
 ---
 
 ## Party features
@@ -88,9 +118,15 @@ The Goose rotates each round. The default is 3 rounds, adjustable up to 12.
 - **Prompt packs.** Add a built-in bonus pack (*Road Trip*, *Holiday Party*, *Birthday*, *Office Party*, *Summer Cookout*) with one click. You can also **Export** your custom prompts as a JSON file and **Import** it at the next party.
 - **Link preview.** When a player pastes a link, the phone looks up the actual track title ("🎵 Rick Astley – Never Gonna Give You Up") or flags a broken link, before they lock it in.
 
-- **Goose avatars.** Every player gets a goose with a collar in their color and a hat: crown, top hat, party hat, beanie, flower, headphones, shades, bow tie or cowboy hat. Players change hats from their phone in the lobby. New geese waddle onto the host's lobby screen as they join. In the lobby, the **Your goose** card also lets players **rename** themselves and pick their goose's **color** from 12 options. Colors stay unique, with taken ones greyed out, so everyone is easy to tell apart. Names and colors can only change between games.
+- **Goose avatars.** Every player gets a goose with a collar in their color and a hat. In the lobby, the **Your goose** card shows a big preview and has tabs to dress it up:
+  - **Hat:** crown, top hat, party hat, beanie, flower, headphones, cowboy, pirate, wizard, viking, chef, halo, bucket hat or propeller cap.
+  - **Extras** (worn with any hat): shades, heart glasses, monocle, bow tie, scarf or gold chain.
+  - **Feathers:** white, grey, brown, black, golden, pink, red, orange, mint, sky blue, lavender or midnight.
+  - **Face:** classic, happy, angry, sleepy or starstruck.
+
+  New geese waddle onto the host's lobby screen as they join. The same card also lets players **rename** themselves and pick their goose's **color** from 12 options. Colors stay unique, with taken ones greyed out, so everyone is easy to tell apart. Names and colors can only change between games; the look can change any time. (Older saved rooms where shades or the bow tie were hats are converted to extras automatically.)
 - **Title cards and score animations.** Big cards announce each round ("All hail King Bartholomew"), judging, voting and the finale. Scoreboard rows slide when ranks change, and points pop up as "+1".
-- **Sound effects** on the host screen, all synthesized in the browser with no audio files: a honk for HONK! reactions and caught geese, chimes on reveals, a fanfare for crownings and the finale, and ticks in the last 5 seconds of a timer. Mute with the 🔊 button.
+- **Sound effects** on the host screen, all synthesized in the browser with no audio files: a honk for HONK! reactions and caught geese, chimes on reveals, a fanfare for crownings and the finale, and ticks in the last 5 seconds of a timer. Mute with the 🔊 button. The honk is built like a real goose's: a breathy "h", then a nasal, raspy "ONK" whose pitch jumps up and sags, slightly different every time.
 - **End-of-game awards.** These are given only when earned. Ties share an award, but an award everyone ties for is skipped.
 
   | Award | Goes to |
@@ -100,6 +136,11 @@ The Goose rotates each round. The default is 3 rounds, adjustable up to 12.
   | Royal Favorite | Crowned the most times |
   | Smooth Bluffer | Escaped as the Secret Goose |
   | Goose Detective | Caught the Goose the most |
+  | Heavyweight | Won the most Goose Fights |
+  | Master Forger | Fooled the most players with fake prompts |
+  | Hive Mind | Matched the most players in Flock Mind |
+  | Missing Link | Added the most links in Goose Chain |
+  | Mind Reader | Most exact guesses in Honk Take |
   | Hype Goose | Sent the most reactions |
   | Crowd Pleaser | Picked the most-reacted song |
 
@@ -113,9 +154,11 @@ The Goose rotates each round. The default is 3 rounds, adjustable up to 12.
   | Guessing | 30 s |
   | King's judging | 45 s |
   | Voting | 40 s |
+  | Writing a fake prompt | 60 s |
+  | Rating (Honk Take) | 30 s |
 
   When time runs out, the game moves on without stragglers. The host can press **+30s** at any time. The countdown follows the server's clock, so phones stay in sync.
-- **Custom prompts.** In the lobby, the host can add custom prompts, King Goose scenarios or Secret Goose feelings for the selected mode. Players can suggest them anonymously from their phones while they wait. Custom prompts are dealt **before** the built-in ones.
+- **Custom prompts.** In the lobby, the host can add custom prompts, King Goose scenarios or Secret Goose feelings for the selected mode. Goose Fight and Fake Prompt share *A Goose is Loose!*'s prompts; Flock Mind and Honk Take have their own lists; Goose Chain doesn't use prompts. Players can suggest them anonymously from their phones while they wait. Custom prompts are dealt **before** the built-in ones.
 
 ---
 
@@ -127,6 +170,7 @@ The Goose rotates each round. The default is 3 rounds, adjustable up to 12.
   - Each device has its own **Mute** button, and the phone's own volume buttons work as usual.
   - If a browser won't start the sound by itself (some phones block autoplay), the phone shows **▶ Tap to play** or **🔊 Tap for sound**. After that one tap, later songs play automatically.
   - Spotify songs start by themselves too (via Spotify's iFrame API), synced to the host. Some browsers (Safari/iPhone especially) still block that, so a **Tap to play** button appears. Without a Spotify login it's a 30-second preview, and since the Spotify player has no volume control, **Mute** pauses it.
+  - **Auto-play toggle.** Each player can turn **Auto-play** off in their music dock (it's remembered on that device). Songs then wait for a **▶ Play this song** tap instead of starting by themselves, and still jump in at the host's spot when tapped. Turning it back on starts a waiting song right away.
 
 - **Music volume:** the slider under *Now playing* (or the **-** and **+** keys) sets the music volume, and the 🔊 button next to it mutes. YouTube songs follow it, and the level carries over between songs and reloads. Spotify's player doesn't let other pages control its volume, so use its own controls for Spotify songs. If a browser blocks autoplay, the panel says to press ▶.
 - **Sharing the room:** **🔗 Copy link** in the host's top bar, or *Copy invite link* on the lobby card, copies a link that drops people straight into the room. On phones and tablets it opens the share sheet instead. Players can also share it from their phone's lobby (*Invite friends*). The 🔔 button turns sound effects on and off.
@@ -164,7 +208,7 @@ Each phone has **YouTube Music ↗ / Spotify ↗** buttons that search for whate
 
 ```
 server.js            Node HTTP server, no dependencies: static files, JSON API, live updates over SSE
-src/game.js          The game: one state machine per room covering all three modes, plus per-viewer views
+src/game.js          The game: one state machine per room covering all eight modes, plus per-viewer views
 src/media.js         Parses YouTube/Spotify links and plain text; looks up titles via oEmbed
 src/prompts.js       Every prompt and scenario from the design doc
 public/host.html     Big screen: js/host.js (UI + music), js/scene.js (WebGL), js/sfx.js (Web Audio)
@@ -174,17 +218,19 @@ public/css/style.css Shared styles
 test/game.test.js    Engine tests: full games of every mode, secrecy checks, link parsing
 test/features.test.js  Timers (fake clock), custom prompts, reactions, setlist, hats, awards,
                        audience, Song of the Night, family mode, packs, save/restore
+test/modes.test.js   Goose Fight, Fake Prompt, Flock Mind, Goose Chain and Honk Take: scoring,
+                       secrecy, song matching, and full games with and without anyone playing
 ```
 
-- **Server-authoritative.** All rules live in `src/game.js`. Phones and the host only send intents such as `submit`, `guess`, `judge`, `vote` and `next`.
+- **Server-authoritative.** All rules live in `src/game.js`. Phones and the host only send intents such as `submit`, `guess`, `judge`, `vote`, `fake`, `rate` and `next`.
 - **Secrets stay secret.** `Room.view(playerId)` builds a separate state for every screen. The public host screen never sees a song's owner before the reveal, and it never sees the Secret Goose's feeling before the defend phase. The Goose's own phone never sees the feeling either. Tests cover all of this.
 - **Live updates** use Server-Sent Events with automatic reconnect. If a phone sleeps or someone refreshes, they rejoin automatically (the session is kept in `localStorage`).
-- **Reactions** are not part of the game state. The server forwards them as a separate SSE event to the host screen only. On the host, they're drawn as point sprites from an emoji texture atlas that is rendered at runtime.
+- **Reactions** are not part of the game state. The server forwards them as a separate SSE event to the host screen (and, in *Everyone remote* games, to every phone). On the host, they're drawn as point sprites from an emoji texture atlas that is rendered at runtime.
 - **Timers** live on the server (`Room.syncTimer`). Each phase gets a key, and a timer only fires if its phase is still current, so a stale timer can never skip ahead. Tests use a fake clock.
 - **The WebGL scene** (`public/js/scene.js`) is raw WebGL 1 with no libraries:
   - A full-screen fragment shader draws the sky, stars, a striped sun, two rocks with siren silhouettes, layered waves, and a goose that rides the swell.
   - A `gl.POINTS` particle system draws music notes while a song plays and feather bursts on reveals, crownings and the finale.
-  - Each mode has its own palette: sunset for *Goose is Loose*, royal gold for *King Goose*, moonlit night for *Secret Goose*.
+  - Each mode has its own palette: sunset for *Goose is Loose*, royal gold for *King Goose*, moonlit night for *Secret Goose*, fiery orange for *Goose Fight*, violet for *Fake Prompt*, sea green for *Flock Mind*, steel blue for *Goose Chain* and hot pink for *Honk Take*.
   - Resolution drops automatically on slow machines.
 - **Rooms survive restarts.**
   - Every change is saved, debounced, to `data/rooms.json`. The file is written atomically, and it's saved again on Ctrl+C.

@@ -4,6 +4,7 @@
 import {
   h, api, openStream, toast, store, playerById, chip, searchUrls, gooseIcon, modeIcon,
   mountInto, clearKept, syncClock, shareLink, shareToast, timerBadge, secondsLeft, copyText, songHref, setlistText, youtubePlaylistUrl, gooseAvatar,
+  RATINGS,
 } from './common.js';
 import { Scene } from './scene.js';
 import { sfx } from './sfx.js';
@@ -89,7 +90,7 @@ function render() {
   if (!state) return;
   const s = state;
   scene.setMood(s.phase === 'lobby' ? 'lobby' : s.phase === 'gameover' ? 'gameover' : s.mode);
-  scene.setSinging(Boolean(s.nowPlaying) && ['listen', 'reveal', 'judge', 'defend', 'vote'].includes(s.phase));
+  scene.setSinging(Boolean(s.nowPlaying) && ['listen', 'reveal', 'judge', 'defend', 'vote', 'write', 'rate'].includes(s.phase));
   const fxN = s.fx ? s.fx.n : 0;
   if (lastFx !== null && fxN !== lastFx && s.fx && s.fx.kind !== 'none') {
     scene.burst(s.fx.kind);
@@ -134,12 +135,19 @@ function titleCard(s) {
   if (!changed || first) return;
   let card = null;
   if (s.phase === 'submit') {
+    const who = playerById(s, s.pickerId);
     if (s.mode === 'loose') card = { kicker: 'A Goose is Loose!', title: 'Pick your songs', sub: 'Your secret prompts are on your phones' };
     if (s.mode === 'king') card = { kicker: `Round ${s.round} of ${s.rounds}`, title: `All hail King ${playerById(s, s.kingId)?.name || 'Goose'}`, sub: 'Subjects: pick the soundtrack', player: playerById(s, s.kingId) };
     if (s.mode === 'secret') card = { kicker: `Round ${s.round} of ${s.rounds}`, title: 'A Goose walks among you', sub: 'Check your phone. Don\u2019t say the feeling out loud!' };
+    if (s.mode === 'fight') card = { kicker: `Round ${s.round} of ${s.rounds}`, title: 'Let\u2019s get ready to rumble', sub: 'Everyone: pick a fighter for the same prompt' };
+    if (s.mode === 'fake') card = { kicker: 'Fake Prompt', title: 'Pick your songs', sub: 'Your secret prompts are on your phones' };
+    if (s.mode === 'mind') card = { kicker: `Round ${s.round} of ${s.rounds}`, title: 'Think like the flock', sub: 'Pick the song everyone else will pick' };
+    if (s.mode === 'chain') card = { kicker: `Turn ${s.round} of ${s.rounds}`, title: `${who?.name || 'Next goose'}\u2019s link`, sub: s.prev ? 'Link a song to the last one' : 'Start a fresh chain', player: who };
+    if (s.mode === 'hot') card = { kicker: `Round ${s.round} of ${s.rounds}`, title: `DJ ${who?.name || 'Goose'}`, sub: 'Everyone else: read their mind', player: who };
   } else if (s.phase === 'judge') card = { kicker: 'King Goose', title: 'Judgement time', sub: 'The crown awaits' };
   else if (s.phase === 'defend') card = { kicker: 'The feeling was', title: s.prompt, sub: 'Make your case!' };
-  else if (s.phase === 'vote') card = { kicker: 'Secret Goose', title: 'Who\u2019s the Goose?', sub: 'Vote on your phones' };
+  else if (s.phase === 'vote' && s.mode === 'secret') card = { kicker: 'Secret Goose', title: 'Who\u2019s the Goose?', sub: 'Vote on your phones' };
+  else if (s.phase === 'vote' && s.mode === 'fake') card = { kicker: 'Fake Prompt', title: 'Find the real prompt', sub: 'Vote on your phones' };
   else if (s.phase === 'gameover') card = { kicker: 'That\u2019s a wrap', title: 'Final scores', sub: '' };
   if (!card) {
     // The game moved on (e.g. the King judged instantly): don't let an old card cover the reveal.
@@ -205,6 +213,11 @@ function mainView(s) {
     default:
       if (s.mode === 'loose') return looseView(s);
       if (s.mode === 'king') return kingView(s);
+      if (s.mode === 'fight') return fightView(s);
+      if (s.mode === 'fake') return fakeView(s);
+      if (s.mode === 'mind') return mindView(s);
+      if (s.mode === 'chain') return chainView(s);
+      if (s.mode === 'hot') return hotView(s);
       return secretView(s);
   }
 }
@@ -256,6 +269,11 @@ function settingsRow(s) {
     loose: { key: 'promptsPerPlayer', label: 'Prompts per player', values: [1, 2, 3] },
     king: { key: 'kingCycles', label: 'Turns as King each', values: [1, 2, 3] },
     secret: { key: 'secretRounds', label: 'Rounds', values: [3, 5, 8, 12] },
+    fight: { key: 'fightRounds', label: 'Rounds', values: [1, 2, 3] },
+    fake: { key: 'fakePrompts', label: 'Songs per player', values: [1, 2] },
+    mind: { key: 'mindRounds', label: 'Rounds', values: [3, 5, 8] },
+    chain: { key: 'chainLaps', label: 'Turns each', values: [1, 2, 3] },
+    hot: { key: 'hotCycles', label: 'Turns as DJ each', values: [1, 2, 3] },
   }[s.mode];
   const cur = s.settings[opt.key];
   return h('div', { class: 'settings' },
@@ -293,12 +311,16 @@ const CUSTOM_HINTS = {
   loose: { label: 'prompt', placeholder: 'What song would you play at a goose wedding?' },
   king: { label: 'scenario', placeholder: 'King Goose gets stuck in a revolving door for three days.' },
   secret: { label: 'feeling', placeholder: 'Hangry' },
+  mind: { label: 'prompt', placeholder: 'A song everyone knows from a car commercial' },
+  hot: { label: 'prompt', placeholder: 'A song you\u2019d play at your own roast' },
 };
 
 function customPanel(s) {
-  const list = s.custom[s.mode];
-  const hint = CUSTOM_HINTS[s.mode];
-  const key = `custom-${s.mode}`;
+  const kind = s.modeInfo.prompts;
+  if (!kind) return null; // Goose Chain has no prompts
+  const list = s.custom[kind] || [];
+  const hint = CUSTOM_HINTS[kind];
+  const key = `custom-${kind}`;
   const details = h('details', { class: 'panel custom', open: customOpen, ontoggle: (e) => { customOpen = e.currentTarget.open; } },
     h('summary', null, h('h2', null, `Your own ${hint.label}s`), h('span', { class: 'count' }, list.length ? `${list.length} added` : 'optional')),
     h('p', { class: 'muted' }, `Custom ${hint.label}s are dealt first. Players can suggest them from their phones while they wait.`),
@@ -311,7 +333,7 @@ function customPanel(s) {
         if (await act('addPrompt', { mode: s.mode, text })) clearKept($('main'), key);
       },
     },
-    h('input', { type: 'text', 'data-keep': key, placeholder: hint.placeholder, maxlength: s.mode === 'secret' ? 30 : 220, 'aria-label': `New ${hint.label}` }),
+    h('input', { type: 'text', 'data-keep': key, placeholder: hint.placeholder, maxlength: kind === 'secret' ? 30 : 220, 'aria-label': `New ${hint.label}` }),
     h('button', { class: 'btn primary', type: 'submit' }, 'Add')),
     h('div', { class: 'pack-row' },
       h('span', { class: 'settings-label' }, 'Bonus packs'),
@@ -514,6 +536,182 @@ function secretView(s) {
     ))));
 }
 
+// ----- Goose Fight -----
+
+function fightView(s) {
+  const all = s.players.map((p) => p.id);
+  const header = [kicker(`Round ${s.round} of ${s.rounds}${s.stage ? ` \u00B7 ${s.stage.label}` : ''}`), bigPrompt(s.prompt)];
+  if (s.phase === 'submit') {
+    return panel('center', ...header,
+      h('p', { class: 'lede' }, 'Everyone: answer this prompt with a song on your phone. Then the songs fight it out, two at a time, until one is left standing.'),
+      progress(s, all));
+  }
+  const r = s.result;
+  if (s.phase === 'reveal' && r.walkover) {
+    return panel('center reveal', ...header,
+      h('div', { class: 'reveal-line' }, 'Only one song entered the ring. ', chip(playerById(s, r.winnerSide.ownerId), 'huge'), ' wins by walkover!'));
+  }
+  const m = s.match;
+  const corner = (f, i) => {
+    const won = r && r.winner === f.id;
+    return h('div', { class: ['fighter', i ? 'blue' : 'red', m.playing === i ? 'playing' : '', r ? (won ? 'won' : 'lost') : ''].join(' ').trim() },
+      h('div', { class: 'kicker' }, i ? '\u{1F535} Blue corner' : '\u{1F534} Red corner'),
+      h('div', { class: 'fighter-song' }, f.display),
+      r ? h('div', { class: 'fighter-votes' }, `${r.tally[f.id] || 0} vote${r.tally[f.id] === 1 ? '' : 's'}`) : null,
+      r && f.ownerId ? chip(playerById(s, f.ownerId)) : null,
+      h('button', { class: 'btn small ghost', onclick: () => act('play', { entryId: f.id }) }, s.nowPlaying?.entryId === f.id ? '\u266B Playing' : '\u25B6 Play'));
+  };
+  const ring = h('div', { class: 'versus' }, corner(m.a, 0), h('div', { class: 'vs', 'aria-hidden': 'true' }, 'VS'), corner(m.b, 1));
+  if (s.phase === 'listen') {
+    return panel('center', ...header, kicker(`Fight ${m.number} \u00B7 ${s.left} songs left`), ring,
+      h('p', { class: 'lede' }, m.playing === 0 ? 'In the red corner\u2026' : '\u2026and in the blue corner!'),
+      s.bye ? h('p', { class: 'fine' }, `\u201C${s.bye.display}\u201D gets a bye this round.`) : null);
+  }
+  if (s.phase === 'vote') {
+    return panel('center', ...header, kicker(`Fight ${m.number}`), ring,
+      h('h2', { class: 'ask' }, 'Vote on your phones: which song wins?'),
+      progress(s, all));
+  }
+  const winner = playerById(s, r.winnerSide.ownerId);
+  return panel('center reveal', ...header, ring,
+    h('div', { class: 'reveal-line' }, r.champion ? '\u{1F3C6} ' : '', chip(winner, 'huge'),
+      r.champion ? ' is the last goose standing!' : r.tie ? ' wins on a coin flip!' : ' wins the fight!'),
+    r.champion ? h('p', { class: 'verdict' }, '+1 for the win, +2 for the title') : h('p', { class: 'lede' }, `${s.left} songs still standing`));
+}
+
+// ----- Fake Prompt -----
+
+function fakeView(s) {
+  const all = s.players.map((p) => p.id);
+  if (s.phase === 'submit') {
+    return panel('center',
+      kicker('Check your phones'),
+      h('h1', null, 'Pick your songs!'),
+      h('p', { class: 'lede' }, `Everyone has ${s.promptsPerPlayer} secret prompt${s.promptsPerPlayer > 1 ? 's' : ''}. Answer with a song. Then everyone else will try to fake the prompt behind it.`),
+      progress(s, all));
+  }
+  const c = s.current;
+  const head = kicker(`Song ${c.number} of ${s.total}`);
+  if (s.phase === 'write') {
+    return panel('center', head,
+      h('div', { class: 'song-title' }, '\u{1F3B5} ', c.display),
+      h('h2', { class: 'ask' }, 'What prompt was this song answering?'),
+      h('p', { class: 'lede' }, 'Write a fake prompt on your phone. Make it believable!'),
+      progress(s, all));
+  }
+  if (s.phase === 'vote') {
+    return panel('center', head,
+      h('div', { class: 'song-title' }, '\u{1F3B5} ', c.display),
+      h('h2', { class: 'ask' }, 'Which one is the real prompt?'),
+      h('ol', { class: 'choices' }, s.choices.map((ch) => h('li', null, ch.text))),
+      progress(s, all));
+  }
+  const owner = playerById(s, s.ownerId);
+  const fooledBy = (id) => Object.keys(s.votes).filter((v) => s.votes[v] === id).map((v) => playerById(s, v)?.name).filter(Boolean);
+  const found = s.result.found.map((id) => playerById(s, id)?.name).filter(Boolean);
+  return panel('center reveal', head,
+    kicker('The real prompt was'),
+    bigPrompt(s.realPrompt),
+    h('div', { class: 'reveal-line' }, 'Picked by ', chip(owner, 'huge')),
+    h('p', { class: 'verdict' }, found.length ? `${found.join(' & ')} found it! +2` : 'Nobody found the real one!'),
+    h('ul', { class: 'guess-list' }, s.choices.filter((ch) => !ch.real).map((ch) => {
+      const fooled = fooledBy(ch.id);
+      return h('li', { class: fooled.length ? 'right' : 'wrong' },
+        h('span', { class: 'fake-text' }, `\u201C${ch.text}\u201D`),
+        h('span', { class: 'arrow' }, 'by'),
+        ch.authors.map((a) => chip(playerById(s, a))),
+        h('span', { class: 'mark' }, fooled.length ? `fooled ${fooled.join(', ')}` : 'fooled nobody'));
+    })));
+}
+
+// ----- Flock Mind -----
+
+function mindView(s) {
+  const header = [kicker(`Round ${s.round} of ${s.rounds}`), bigPrompt(s.prompt)];
+  if (s.phase === 'submit') {
+    return panel('center', ...header,
+      h('p', { class: 'lede' }, 'Pick the song you think everyone else will pick. Same song or same artist counts as a match. Great minds honk alike!'),
+      progress(s, s.players.map((p) => p.id)));
+  }
+  const top = s.groups[0]?.length || 0;
+  return panel('center reveal', ...header,
+    h('div', { class: 'reveal-line' }, top > 1 ? `${top} geese think alike!` : 'Nobody matched. A flock of individuals.'),
+    h('ul', { class: 'mind-groups' }, s.groups.map((g) => h('li', { class: g.length > 1 ? 'match' : 'solo' },
+      h('div', { class: 'mind-who' }, g.map((p) => chip(playerById(s, p.ownerId)))),
+      h('div', { class: 'mind-songs' }, [...new Set(g.map((p) => p.display))].join(' \u00B7 ')),
+      h('span', { class: 'mark' }, g.length > 1 ? `+${g.length - 1} each` : 'no match'),
+      h('button', { class: 'btn small ghost', onclick: () => act('play', { entryId: g[0].id }), 'aria-label': 'Play' }, s.nowPlaying?.entryId === g[0].id ? '\u266B' : '\u25B6')))));
+}
+
+// ----- Goose Chain -----
+
+function chainView(s) {
+  const picker = playerById(s, s.pickerId);
+  const header = kicker(`Turn ${s.round} of ${s.rounds} \u00B7 Chain of ${s.chainLength} \u00B7 Best ${s.best}`);
+  const chainList = s.chain.length ? h('ol', { class: 'chain' }, s.chain.map((l) => h('li', { class: s.current && l.id === s.current.id ? 'new' : '' },
+    chip(playerById(s, l.ownerId)), h('span', null, l.display)))) : null;
+  if (s.phase === 'submit') {
+    return panel('center', header,
+      h('div', { class: 'king-line' }, '\u{1F517} ', chip(picker, 'huge'), s.prev ? ' adds the next link' : ' starts a new chain'),
+      s.prev ? [kicker('Link it to'), h('div', { class: 'song-title' }, s.prev.display)]
+        : h('p', { class: 'lede' }, 'Any song goes. Pick something with lots of ways to link to it!'),
+      chainList);
+  }
+  if (s.phase === 'listen') {
+    return panel('center reveal', header,
+      h('div', { class: 'reveal-line' }, chip(picker, 'huge'), ' starts a new chain with'),
+      h('div', { class: 'song-title' }, s.current.display),
+      h('p', { class: 'lede' }, 'Every next song has to link to the one before it.'));
+  }
+  const link = h('div', { class: 'link-pair' },
+    h('div', { class: 'link-from' }, kicker('From'), h('div', null, s.prev.display)),
+    h('div', { class: 'link-arrow', 'aria-hidden': 'true' }, '\u2192'),
+    h('div', { class: 'link-to' }, kicker('To'), h('div', null, s.current.display)));
+  if (s.phase === 'vote') {
+    return panel('center', header, link,
+      h('h2', { class: 'ask' }, `${picker?.name || 'Picker'}, explain the link!`),
+      h('p', { class: 'lede' }, 'Everyone else: does it hold? Vote on your phones.'),
+      progress(s, s.players.filter((p) => p.id !== s.pickerId).map((p) => p.id)));
+  }
+  const r = s.result;
+  return panel('center reveal', header, link,
+    h('div', { class: 'reveal-line' }, r.held ? '\u{1F517} The chain holds!' : '\u{1F4A5} Chain broken!'),
+    h('p', { class: 'verdict' }, `${r.yes} \u{1F44D} \u00B7 ${r.no} \u{1F44E}  \u2014  `,
+      r.held ? `${picker?.name || 'They'} +1. Chain of ${r.length}!` : `${picker?.name || 'They'} loses a point. The next goose starts fresh.`),
+    r.held ? chainList : null);
+}
+
+// ----- Honk Take -----
+
+function hotView(s) {
+  const dj = playerById(s, s.pickerId);
+  const header = [kicker(`Round ${s.round} of ${s.rounds}`), h('div', { class: 'king-line' }, '\u{1F336}\uFE0F ', chip(dj, 'huge'), ' is the DJ'), bigPrompt(s.prompt)];
+  const scale = h('div', { class: 'rate-scale' }, RATINGS.map((r) => h('div', { class: 'rate-cell' }, h('span', { class: 'rate-emoji' }, r.emoji), h('span', null, `${r.v} \u00B7 ${r.label}`))));
+  if (s.phase === 'submit') {
+    return panel('center', ...header,
+      h('p', { class: 'lede' }, `${dj?.name || 'The DJ'} is picking a song for this. Everyone else: get ready to guess how much they really love it.`));
+  }
+  if (s.phase === 'rate') {
+    return panel('center', ...header,
+      h('div', { class: 'song-title' }, '\u{1F3B5} ', s.current.display),
+      h('h2', { class: 'ask' }, `How much does ${dj?.name || 'the DJ'} love this song?`),
+      scale,
+      h('p', { class: 'lede' }, 'Rate it on your phones. Everyone guesses; the DJ tells the truth.'),
+      progress(s, s.players.map((p) => p.id)));
+  }
+  const r = s.result;
+  const truth = r.truth ? RATINGS[r.truth - 1] : null;
+  return panel('center reveal', ...header,
+    h('div', { class: 'reveal-line' }, truth ? [`${dj?.name || 'The DJ'} rated it `, h('span', { class: 'rate-big' }, truth.emoji), ` ${truth.v}/5 \u00B7 ${truth.label}`] : `${dj?.name || 'The DJ'} never rated it!`),
+    h('ul', { class: 'guess-list' }, Object.keys(s.ratings).filter((id) => id !== s.pickerId).map((id) => {
+      const g = s.ratings[id];
+      const mark = r.exact.includes(id) ? '+2' : r.close.includes(id) ? '+1' : '\u2717';
+      return h('li', { class: mark === '\u2717' ? 'wrong' : 'right' },
+        chip(playerById(s, id)), h('span', { class: 'arrow' }, 'guessed'), `${RATINGS[g - 1].emoji} ${g}`, h('span', { class: 'mark' }, mark));
+    })),
+    r.exact.length ? h('p', { class: 'verdict' }, `${dj?.name || 'The DJ'} gets +${r.exact.length} for being readable`) : null);
+}
+
 // ----- game over -----
 
 function gameoverView(s) {
@@ -529,7 +727,10 @@ function gameoverView(s) {
   ), songOfTheNight(s), awardsPanel(s), setlistPanel(s)];
 }
 
-const AWARD_ICONS = { ears: '\u{1F442}', disguise: '\u{1F978}', royal: '\u{1F451}', bluffer: '\u{1F92B}', detective: '\u{1F50E}', hype: '\u{1F4E3}', crowd: '\u{1F525}' };
+const AWARD_ICONS = {
+  ears: '\u{1F442}', disguise: '\u{1F978}', royal: '\u{1F451}', bluffer: '\u{1F92B}', detective: '\u{1F50E}', hype: '\u{1F4E3}', crowd: '\u{1F525}',
+  fighter: '\u{1F94A}', forger: '\u{1F3AD}', hive: '\u{1F9E0}', linker: '\u{1F517}', reader: '\u{1F52E}',
+};
 
 function awardsPanel(s) {
   const awards = s.awards || [];
@@ -626,6 +827,26 @@ function nextLabel(s) {
     if (s.phase === 'defend') return 'Start the vote';
     if (s.phase === 'vote') return 'Reveal now';
     if (s.phase === 'reveal') return s.round >= s.rounds ? 'Final scores' : 'Next round';
+  }
+  const lastRound = s.round >= s.rounds;
+  if (s.mode === 'fight') {
+    if (s.phase === 'listen') return s.match?.playing === 0 ? 'Blue corner' : 'To the vote!';
+    if (s.phase === 'vote') return 'Reveal now';
+    if (s.phase === 'reveal') return s.result?.champion ? (lastRound ? 'Final scores' : 'Next round') : 'Next fight';
+  }
+  if (s.mode === 'fake') {
+    if (s.phase === 'write') return 'Start the vote';
+    if (s.phase === 'vote') return 'Reveal now';
+    if (s.phase === 'reveal') return s.current.number >= s.total ? 'Final scores' : 'Next song';
+  }
+  if (s.mode === 'mind' && s.phase === 'reveal') return lastRound ? 'Final scores' : 'Next round';
+  if (s.mode === 'chain') {
+    if (s.phase === 'vote') return 'Reveal now';
+    return lastRound ? 'Final scores' : 'Next link';
+  }
+  if (s.mode === 'hot') {
+    if (s.phase === 'rate') return 'Reveal now';
+    if (s.phase === 'reveal') return lastRound ? 'Final scores' : 'Next DJ';
   }
   return 'Next';
 }
