@@ -806,7 +806,7 @@ class Room {
     this.lastReact[pid] = now;
     this.bump('reactsSent', [pid]);
     if (this.nowPlayingId) this.bump('reacts', [this.nowPlayingId]);
-    this.onEvent('react', { kind, color: p.color, name: p.name });
+    this.onEvent('react', { kind, color: p.color, name: p.name, from: pid });
     return true;
   }
 

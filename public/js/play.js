@@ -131,6 +131,11 @@ function reactionBar() {
     onclick: (e) => {
       const b = e.currentTarget;
       b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
+      // Honk right away, inside the tap (phones only allow sound from a tap); the server echo is skipped.
+      if (r.kind === 'honk' && state?.settings?.venue === 'remote' && !isDeviceMuted()) {
+        const ctx = sfx.ensure();
+        if (ctx && ctx.state !== 'running') ctx.resume().then(() => sfx.honk(), () => {}); else sfx.honk();
+      }
       act('react', { kind: r.kind }).catch(() => {});
     },
   }, r.glyph)));
@@ -141,7 +146,7 @@ function remoteReaction(r) {
   if (state?.settings?.venue !== 'remote') return;
   const def = REACTIONS.find((x) => x.kind === r.kind);
   if (!def) return;
-  if (r.kind === 'honk' && !isDeviceMuted()) sfx.honk();
+  if (r.kind === 'honk' && r.from !== state.me?.id && !isDeviceMuted()) sfx.honk();
   if (document.querySelectorAll('.react-float').length > 24) return;
   const el = h('div', {
     class: `react-float${r.kind === 'honk' ? ' honk' : ''}`,
